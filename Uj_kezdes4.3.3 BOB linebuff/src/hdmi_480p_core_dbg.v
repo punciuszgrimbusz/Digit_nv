@@ -2,7 +2,7 @@
 `default_nettype none
 `include "svo_defines.vh"
 
-module hdmi_480p_core (
+module hdmi_480p_core_dbg (
     input  wire        pix_clk,
     input  wire        pix_clk_5x,
     input  wire        resetn,
