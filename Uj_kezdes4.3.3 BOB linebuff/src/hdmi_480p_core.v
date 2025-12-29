@@ -476,9 +476,9 @@ module hdmi_480p_core (
     reg        rel_pend_n;
     reg [15:0] rel_pend_data_n;
 
-    // 16 bufferhez skálázott WM-ek
-    localparam integer HIGH_WM    = (NUM_BUFS - 8);  // 12
-    localparam integer LOW_WM     = (NUM_BUFS - 2);  // 8
+    // 16 bufferhez skálázott WM-ek (hysteresissel)
+    localparam integer HIGH_WM    = (NUM_BUFS - 2);  // 14: drop threshold
+    localparam integer LOW_WM     = (NUM_BUFS - 8);  // 8 : duplicate threshold
     localparam integer SAFE_START = V_ACTIVE - 128;
 
     reg do_drop, do_drop_n;
