@@ -10,6 +10,7 @@
 // I2C speed ~5 kHz from 27 MHz clk.
 
 `timescale 1ns / 1ps
+`default_nettype none
 
 module tvp5150_i2c_init (
     input  wire clk,        // 27 MHz
@@ -54,6 +55,7 @@ module tvp5150_i2c_init (
 
     reg [3:0]  state;
     reg [15:0] pause_cnt;
+    reg        abort_restart; // when a NACK is seen, abort current sequence and retry
 
     localparam [3:0]
         ST_IDLE     = 4'd0,
@@ -67,6 +69,7 @@ module tvp5150_i2c_init (
         ST_STOP_B   = 4'd8;
 
     wire half_tick = (clk_cnt == CLKS_PER_HALF - 1);
+    wire sda_in    = tvp_sda;
 
     // -------------------------------------------------
     // Main I2C bit-banging FSM
@@ -86,6 +89,7 @@ module tvp5150_i2c_init (
             shift_reg  <= 8'h00;
             bit_idx    <= 4'd0;
             init_done  <= 1'b0;
+            abort_restart <= 1'b0;
         end else begin
             // clock divider for SCL timing
             if (half_tick)
@@ -183,9 +187,11 @@ module tvp5150_i2c_init (
                 ST_ACK_HIGH: begin
                     if (half_tick) begin
                         scl_reg <= 1'b0;
-                        // We ignore ACK value for now, just timing
-
-                        if (byte_in_tr < 2) begin
+                        // If the slave NACKs, abort and restart the sequence
+                        if (sda_in !== 1'b0) begin
+                            abort_restart <= 1'b1;
+                            state         <= ST_STOP_A;
+                        end else if (byte_in_tr < 2) begin
                             // More bytes to send in THIS transaction:
                             //  byte_in_tr = 0: next is REG
                             //  byte_in_tr = 1: next is DATA
@@ -222,8 +228,19 @@ module tvp5150_i2c_init (
                     if (half_tick) begin
                         sda_drive <= 1'b0;  // release SDA → goes high (STOP)
 
-                        // Move to next pair, or finish after all three
-                        if (pair_idx < 2'd2) begin
+                        // Move to next pair, restart on error, or finish after all three
+                        if (abort_restart) begin
+                            abort_restart <= 1'b0;
+
+                            // reset back to the first pair and wait IDLE pause
+                            pair_idx   <= 2'd0;
+                            cur_reg    <= 8'h00;
+                            cur_data   <= 8'h00;
+                            byte_in_tr <= 2'd0;
+                            bit_idx    <= 4'd0;
+                            pause_cnt  <= 16'd0;
+                            state      <= ST_IDLE;
+                        end else if (pair_idx < 2'd2) begin
                             // Advance index
                             pair_idx <= pair_idx + 1'b1;
 
@@ -261,3 +278,5 @@ module tvp5150_i2c_init (
     end
 
 endmodule
+
+`default_nettype wire
