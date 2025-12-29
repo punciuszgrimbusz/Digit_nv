@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Module name="top" T_Register="1786(0)" T_Alu="393(0)" T_Lut="3095(0)" T_Bsram="16(0)" T_Ssram="4(0)">
+ <SubModule name="u_tvp_i2c" Register="54" Lut="109" T_Register="54(54)" T_Lut="109(109)"/>
+ <SubModule name="u_pll"/>
+ <SubModule name="u_div_5"/>
+ <SubModule name="u_Reset_Sync_pix" Register="4" Alu="4" Lut="2" T_Register="4(4)" T_Alu="4(4)" T_Lut="2(2)"/>
+ <SubModule name="u_Reset_Sync_cam" Register="4" Alu="4" Lut="2" T_Register="4(4)" T_Alu="4(4)" T_Lut="2(2)"/>
+ <SubModule name="u_cam_cap" Register="19" Alu="4" Lut="24" T_Register="19(19)" T_Alu="4(4)" T_Lut="24(24)"/>
+ <SubModule name="u_cnt_raw" Register="22" Lut="18" T_Register="22(22)" T_Lut="18(18)"/>
+ <SubModule name="u_hdmi" Register="921" Alu="87" Lut="2078" Ssram="4" T_Register="1137(921)" T_Alu="192(87)" T_Lut="2302(2078)" T_Bsram="16(0)" T_Ssram="4(4)">
+  <SubModule name="u_rel_cdc" Register="75" Lut="4" T_Register="75(75)" T_Lut="4(4)"/>
+  <SubModule name="u_desc_cdc" Register="30" Lut="3" T_Register="30(30)" T_Lut="3(3)"/>
+  <SubModule name="u_buf0" Lut="4" Bsram="1" T_Lut="4(4)" T_Bsram="1(1)"/>
+  <SubModule name="u_buf1" Lut="2" Bsram="1" T_Lut="2(2)" T_Bsram="1(1)"/>
+  <SubModule name="u_buf2" Lut="2" Bsram="1" T_Lut="2(2)" T_Bsram="1(1)"/>
+  <SubModule name="u_buf3" Lut="2" Bsram="1" T_Lut="2(2)" T_Bsram="1(1)"/>
+  <SubModule name="u_buf4" Lut="1" Bsram="1" T_Lut="1(1)" T_Bsram="1(1)"/>
+  <SubModule name="u_buf5" Lut="1" Bsram="1" T_Lut="1(1)" T_Bsram="1(1)"/>
+  <SubModule name="u_buf6" Lut="1" Bsram="1" T_Lut="1(1)" T_Bsram="1(1)"/>
+  <SubModule name="u_buf7" Lut="1" Bsram="1" T_Lut="1(1)" T_Bsram="1(1)"/>
+  <SubModule name="u_buf8" Lut="1" Bsram="1" T_Lut="1(1)" T_Bsram="1(1)"/>
+  <SubModule name="u_buf9" Lut="1" Bsram="1" T_Lut="1(1)" T_Bsram="1(1)"/>
+  <SubModule name="u_buf10" Lut="1" Bsram="1" T_Lut="1(1)" T_Bsram="1(1)"/>
+  <SubModule name="u_buf11" Lut="1" Bsram="1" T_Lut="1(1)" T_Bsram="1(1)"/>
+  <SubModule name="u_buf12" Lut="1" Bsram="1" T_Lut="1(1)" T_Bsram="1(1)"/>
+  <SubModule name="u_buf13" Lut="1" Bsram="1" T_Lut="1(1)" T_Bsram="1(1)"/>
+  <SubModule name="u_buf14" Lut="1" Bsram="1" T_Lut="1(1)" T_Bsram="1(1)"/>
+  <SubModule name="u_buf15" Lut="1" Bsram="1" T_Lut="1(1)" T_Bsram="1(1)"/>
+  <SubModule name="enc_b" Register="38" Alu="35" Lut="91" T_Register="38(38)" T_Alu="35(35)" T_Lut="91(91)"/>
+  <SubModule name="enc_g" Register="37" Alu="35" Lut="52" T_Register="37(37)" T_Alu="35(35)" T_Lut="52(52)"/>
+  <SubModule name="enc_r" Register="36" Alu="35" Lut="52" T_Register="36(36)" T_Alu="35(35)" T_Lut="52(52)"/>
+ </SubModule>
+ <SubModule name="u_camfield_period" Register="167" Lut="54" T_Register="167(167)" T_Lut="54(54)"/>
+ <SubModule name="u_pager" Register="317" Alu="189" Lut="495" T_Register="317(317)" T_Alu="189(189)" T_Lut="495(495)"/>
+ <SubModule name="u_logger" Register="62" Lut="89" T_Register="62(62)" T_Lut="89(89)"/>
+</Module>

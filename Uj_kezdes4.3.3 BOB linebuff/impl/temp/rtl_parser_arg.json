@@ -1,0 +1,93 @@
+{
+ "Device" : "GW1NR-9C",
+ "Files" : [
+  {
+   "Path" : "C:/Users/palko/Desktop/NVG/Uj_kezdes/Uj_kezdes4.3.3 BOB linebuff/src/async_gray_fifo.v",
+   "Type" : "verilog"
+  },
+  {
+   "Path" : "C:/Users/palko/Desktop/NVG/Uj_kezdes/Uj_kezdes4.3.3 BOB linebuff/src/cam_crop_240.v",
+   "Type" : "verilog"
+  },
+  {
+   "Path" : "C:/Users/palko/Desktop/NVG/Uj_kezdes/Uj_kezdes4.3.3 BOB linebuff/src/cam_field_diag.v",
+   "Type" : "verilog"
+  },
+  {
+   "Path" : "C:/Users/palko/Desktop/NVG/Uj_kezdes/Uj_kezdes4.3.3 BOB linebuff/src/cam_field_line_counter.v",
+   "Type" : "verilog"
+  },
+  {
+   "Path" : "C:/Users/palko/Desktop/NVG/Uj_kezdes/Uj_kezdes4.3.3 BOB linebuff/src/cam_frame_line_counter.v",
+   "Type" : "verilog"
+  },
+  {
+   "Path" : "C:/Users/palko/Desktop/NVG/Uj_kezdes/Uj_kezdes4.3.3 BOB linebuff/src/cam_i2c_diag_lines.v",
+   "Type" : "verilog"
+  },
+  {
+   "Path" : "C:/Users/palko/Desktop/NVG/Uj_kezdes/Uj_kezdes4.3.3 BOB linebuff/src/cdc_reqack_bus.v",
+   "Type" : "verilog"
+  },
+  {
+   "Path" : "C:/Users/palko/Desktop/NVG/Uj_kezdes/Uj_kezdes4.3.3 BOB linebuff/src/gowin_clkdiv/gowin_clkdiv.v",
+   "Type" : "verilog"
+  },
+  {
+   "Path" : "C:/Users/palko/Desktop/NVG/Uj_kezdes/Uj_kezdes4.3.3 BOB linebuff/src/gowin_rpll/gowin_rpll.v",
+   "Type" : "verilog"
+  },
+  {
+   "Path" : "C:/Users/palko/Desktop/NVG/Uj_kezdes/Uj_kezdes4.3.3 BOB linebuff/src/hdmi_480p_core.v",
+   "Type" : "verilog"
+  },
+  {
+   "Path" : "C:/Users/palko/Desktop/NVG/Uj_kezdes/Uj_kezdes4.3.3 BOB linebuff/src/i2c_diag_pager.v",
+   "Type" : "verilog"
+  },
+  {
+   "Path" : "C:/Users/palko/Desktop/NVG/Uj_kezdes/Uj_kezdes4.3.3 BOB linebuff/src/i2c_diag_test240.v",
+   "Type" : "verilog"
+  },
+  {
+   "Path" : "C:/Users/palko/Desktop/NVG/Uj_kezdes/Uj_kezdes4.3.3 BOB linebuff/src/i2c_frame_logger_arduino.v",
+   "Type" : "verilog"
+  },
+  {
+   "Path" : "C:/Users/palko/Desktop/NVG/Uj_kezdes/Uj_kezdes4.3.3 BOB linebuff/src/line_buffer_dc.v",
+   "Type" : "verilog"
+  },
+  {
+   "Path" : "C:/Users/palko/Desktop/NVG/Uj_kezdes/Uj_kezdes4.3.3 BOB linebuff/src/svo_defines.vh",
+   "Type" : "verilog"
+  },
+  {
+   "Path" : "C:/Users/palko/Desktop/NVG/Uj_kezdes/Uj_kezdes4.3.3 BOB linebuff/src/svo_tmds.v",
+   "Type" : "verilog"
+  },
+  {
+   "Path" : "C:/Users/palko/Desktop/NVG/Uj_kezdes/Uj_kezdes4.3.3 BOB linebuff/src/toggle_period_pix_to_cam.v",
+   "Type" : "verilog"
+  },
+  {
+   "Path" : "C:/Users/palko/Desktop/NVG/Uj_kezdes/Uj_kezdes4.3.3 BOB linebuff/src/top.v",
+   "Type" : "verilog"
+  },
+  {
+   "Path" : "C:/Users/palko/Desktop/NVG/Uj_kezdes/Uj_kezdes4.3.3 BOB linebuff/src/tvp5150_capture.v",
+   "Type" : "verilog"
+  },
+  {
+   "Path" : "C:/Users/palko/Desktop/NVG/Uj_kezdes/Uj_kezdes4.3.3 BOB linebuff/src/tvp5150_i2c_init.v",
+   "Type" : "verilog"
+  }
+ ],
+ "IncludePath" : [
+
+ ],
+ "LoopLimit" : 2000,
+ "ResultFile" : "C:/Users/palko/Desktop/NVG/Uj_kezdes/Uj_kezdes4.3.3 BOB linebuff/impl/temp/rtl_parser.result",
+ "Top" : "top",
+ "VerilogStd" : "verilog_2001",
+ "VhdlStd" : "vhdl_93"
+}

@@ -1,0 +1,330 @@
+`timescale 1ns / 1ps
+`default_nettype none
+/*
+0 raw_lines_per_field – nyers sorok/field (cam_field_line_counter mérése)
+1 dbg_desc_count – PIX oldali desc FIFO pillanatnyi töltöttség (0..16)
+2 dbg_underflow_low10 – underflow események száma (nincs descriptor amikor kéne sor)
+3 dbg_overflow_low10 – overflow események száma (tele a PIX FIFO, eldob descriptor)
+4 dbg_drop_used – drop beavatkozások száma (SAFE zónában descriptor eldobás)
+5 dbg_dup_used – dup beavatkozások száma (SAFE zónában sor ismétlés)
+6 dbg_resync_used – resync (marker-seek) történt-e az előző HDMI frame-ben (flag)
+7 dbg_desc_min – PIX desc FIFO minimum töltöttség az előző HDMI frame alatt
+8 dbg_desc_max – PIX desc FIFO maximum töltöttség az előző HDMI frame alatt
+9 dbg_marker_found + dbg_marker_off – talált-e frame-start markert a FIFO-ban, és hányadik elemre van (offset)
+10 cam_field_period_lo – field period mérés alsó 16 bit (pix_clk ciklusokban)
+11 cam_field_period_hi – field period mérés felső 16 bit
+12 dbg_cam_fieldtog_cnt – field-toggle élek száma (kamera oldal)
+13 dbg_cam_marker_inj_cnt – beadott frame-start markerek száma (kamera oldal)
+14 dbg_cam_desc_sent_cnt – CAM oldalon előállított/elküldött deskriptorok száma
+15 lines_per_field_est – becsült sor/field = (desc_sent_delta / fieldtog_delta)
+16 dbg_fault_sticky – sticky fault bitek (RX_DUPBUF / REL_NOT_OWNED / REL_HITS_CUR / DESC_OVERFLOW / SEEK_EMPTY)
+17 dbg_own_map – PIX oldali buffer ownership bitmap (melyik 0..7 buf “owned”)
+18 dbg_rx_dupbuf_cnt – hányszor jött olyan buf descriptorban, ami már owned volt
+19 dbg_rel_not_owned_cnt – hányszor release-elt nem-owned bufot
+20 dbg_overflow_rel_lo8 – overflow miatti azonnali release-ek számlálója (low8)
+21 dbg_free_cnt – CAM free buffer darabszám (0..8) line_start pillanatban
+22 dbg_free_min – free_cnt minimum az adott fieldben
+23 dbg_free_max – free_cnt maximum az adott fieldben
+24 dbg_alloc_fail_cnt – CAM oldali alloc fail-ek száma (elfogyott a free buf)
+25 dbg_rel_doublefree_cnt – double-free gyanú: olyan release jött, ami már free volt
+26 desc_delta_lat – előjeles delta (latched): desc töltöttség változás field-enként
+27 free_delta_lat – előjeles delta (latched): free_cnt változás field-enként
+28 uf_delta_lat – underflow delta (field-enkénti növekmény)
+29 of_delta_lat – overflow delta (field-enkénti növekmény)
+30 drop_accum – drop események összegzett száma (akkumulált)
+31 dup_accum – dup események összegzett száma (akkumulált)
+32 resync_accum – resync események összegzett száma (akkumulált)
+33 dbg_cam_descq_cnt_cam – CAM→PIX descriptor queue töltöttség (0..31/32)
+*/
+module i2c_diag_pager #(
+    parameter integer CLK_HZ  = 27000000,
+    parameter integer PERIODS = 10,
+    parameter integer PAGES   = 34   // 0..33
+)(
+    input  wire       clk,
+    input  wire       resetn,
+
+    input  wire       i2c_busy,
+
+    input  wire [9:0] raw_lines_per_field,
+
+    input  wire [4:0] dbg_desc_count,
+    input  wire [9:0] dbg_underflow_low10,
+    input  wire [9:0] dbg_overflow_low10,
+
+    input  wire [2:0] dbg_drop_used,
+    input  wire [2:0] dbg_dup_used,
+    input  wire       dbg_resync_used,
+
+    input  wire [4:0] dbg_desc_min,
+    input  wire [4:0] dbg_desc_max,
+
+    input  wire [3:0] dbg_marker_off,
+    input  wire       dbg_marker_found,
+
+    input  wire [15:0] cam_field_period_lo,
+    input  wire [15:0] cam_field_period_hi,
+
+    input  wire [15:0] dbg_cam_fieldtog_cnt,
+    input  wire [15:0] dbg_cam_marker_inj_cnt,
+    input  wire [15:0] dbg_cam_desc_sent_cnt,
+
+    // pages 16..25
+    input  wire [15:0] dbg_fault_sticky,       // page16
+    input  wire [7:0]  dbg_own_map,            // page17 (low8)
+    input  wire [15:0] dbg_rx_dupbuf_cnt,      // page18
+    input  wire [15:0] dbg_rel_not_owned_cnt,  // page19
+    input  wire [7:0]  dbg_overflow_rel_lo8,   // page20 (low8)
+
+    input  wire [3:0]  dbg_free_cnt,           // page21 (low4)
+    input  wire [3:0]  dbg_free_min,           // page22 (low4)
+    input  wire [3:0]  dbg_free_max,           // page23 (low4)
+    input  wire [15:0] dbg_alloc_fail_cnt,     // page24
+    input  wire [15:0] dbg_rel_doublefree_cnt, // page25
+
+    input  wire [5:0]  dbg_cam_descq_cnt_cam,  // page33
+
+    output reg         new_sample = 1'b0,
+    output reg [7:0]   out_page   = 8'd0,
+    output reg [15:0]  out_value  = 16'd0
+);
+
+    localparam integer PERIOD = (CLK_HZ / PERIODS);
+    localparam [9:0]   LPF_INVALID = 10'h3FF; // 1023
+
+    function [16:0] delta17;
+        input [15:0] cur;
+        input [15:0] prev;
+        begin
+            if (cur >= prev) delta17 = {1'b0,cur} - {1'b0,prev};
+            else             delta17 = {1'b0,cur} + 17'd65536 - {1'b0,prev};
+        end
+    endfunction
+
+    function [9:0] delta10_reset_ok;
+        input [9:0] cur;
+        input [9:0] prev;
+        begin
+            if (cur >= prev) delta10_reset_ok = cur - prev;
+            else             delta10_reset_ok = cur;
+        end
+    endfunction
+
+    reg [24:0] cnt  = 25'd0;
+    reg [7:0]  page = 8'd0;
+    reg [15:0] value_mux;
+
+    reg [15:0] last_desc_sent = 16'd0;
+    reg [15:0] last_fieldtog  = 16'd0;
+
+    reg [16:0] div_rem   = 17'd0;
+    reg [16:0] div_denom = 17'd1;
+    reg [9:0]  div_quot  = 10'd0;
+    reg        div_busy  = 1'b0;
+
+    reg [9:0]  lines_per_field_est = LPF_INVALID;
+
+    reg  signed [7:0] desc_delta_lat = 8'sd0;
+    reg  signed [7:0] free_delta_lat = 8'sd0;
+    reg  [9:0]        uf_delta_lat   = 10'd0;
+    reg  [9:0]        of_delta_lat   = 10'd0;
+
+    reg [15:0] drop_accum_work   = 16'd0;
+    reg [15:0] dup_accum_work    = 16'd0;
+    reg [15:0] resync_accum_work = 16'd0;
+
+    reg [15:0] drop_accum   = 16'd0;
+    reg [15:0] dup_accum    = 16'd0;
+    reg [15:0] resync_accum = 16'd0;
+
+    reg [15:0] prev_fieldtog_cnt = 16'd0;
+    reg [4:0]  prev_desc_count   = 5'd0;
+    reg [3:0]  prev_free_cnt     = 4'd0;
+    reg [9:0]  prev_uf           = 10'd0;
+    reg [9:0]  prev_of           = 10'd0;
+
+    wire field_event = (dbg_cam_fieldtog_cnt != prev_fieldtog_cnt);
+
+    always @* begin
+        value_mux = 16'h0000;
+        case (page)
+            8'd0:  value_mux = {6'd0, raw_lines_per_field};
+            8'd1:  value_mux = {11'd0, dbg_desc_count};
+            8'd2:  value_mux = {6'd0, dbg_underflow_low10};
+            8'd3:  value_mux = {6'd0, dbg_overflow_low10};
+            8'd4:  value_mux = {13'd0, dbg_drop_used};
+            8'd5:  value_mux = {13'd0, dbg_dup_used};
+            8'd6:  value_mux = {15'd0, dbg_resync_used};
+            8'd7:  value_mux = {11'd0, dbg_desc_min};
+            8'd8:  value_mux = {11'd0, dbg_desc_max};
+            8'd9:  value_mux = {11'd0, dbg_marker_found, dbg_marker_off};
+
+            8'd10: value_mux = cam_field_period_lo;
+            8'd11: value_mux = cam_field_period_hi;
+
+            8'd12: value_mux = dbg_cam_fieldtog_cnt;
+            8'd13: value_mux = dbg_cam_marker_inj_cnt;
+            8'd14: value_mux = dbg_cam_desc_sent_cnt;
+
+            8'd15: value_mux = {6'd0, lines_per_field_est};
+
+            8'd16: value_mux = dbg_fault_sticky;
+            8'd17: value_mux = {8'd0, dbg_own_map};
+            8'd18: value_mux = dbg_rx_dupbuf_cnt;
+            8'd19: value_mux = dbg_rel_not_owned_cnt;
+            8'd20: value_mux = {8'd0, dbg_overflow_rel_lo8};
+
+            8'd21: value_mux = {12'd0, dbg_free_cnt};
+            8'd22: value_mux = {12'd0, dbg_free_min};
+            8'd23: value_mux = {12'd0, dbg_free_max};
+            8'd24: value_mux = dbg_alloc_fail_cnt;
+            8'd25: value_mux = dbg_rel_doublefree_cnt;
+
+            8'd26: value_mux = {{8{desc_delta_lat[7]}}, desc_delta_lat};
+            8'd27: value_mux = {{8{free_delta_lat[7]}}, free_delta_lat};
+            8'd28: value_mux = {6'd0, uf_delta_lat};
+            8'd29: value_mux = {6'd0, of_delta_lat};
+            8'd30: value_mux = drop_accum;
+            8'd31: value_mux = dup_accum;
+            8'd32: value_mux = resync_accum;
+
+            8'd33: value_mux = {10'd0, dbg_cam_descq_cnt_cam};
+
+            default: value_mux = 16'h0000;
+        endcase
+    end
+
+    always @(posedge clk or negedge resetn) begin
+        if (!resetn) begin
+            cnt        <= 25'd0;
+            page       <= 8'd0;
+            new_sample <= 1'b0;
+            out_page   <= 8'd0;
+            out_value  <= 16'd0;
+
+            last_desc_sent      <= 16'd0;
+            last_fieldtog       <= 16'd0;
+            div_rem             <= 17'd0;
+            div_denom           <= 17'd1;
+            div_quot            <= 10'd0;
+            div_busy            <= 1'b0;
+            lines_per_field_est <= LPF_INVALID;
+
+            desc_delta_lat      <= 8'sd0;
+            free_delta_lat      <= 8'sd0;
+            uf_delta_lat        <= 10'd0;
+            of_delta_lat        <= 10'd0;
+
+            drop_accum_work     <= 16'd0;
+            dup_accum_work      <= 16'd0;
+            resync_accum_work   <= 16'd0;
+
+            drop_accum          <= 16'd0;
+            dup_accum           <= 16'd0;
+            resync_accum        <= 16'd0;
+
+            prev_fieldtog_cnt   <= 16'd0;
+            prev_desc_count     <= 5'd0;
+            prev_free_cnt       <= 4'd0;
+            prev_uf             <= 10'd0;
+            prev_of             <= 10'd0;
+
+        end else begin
+            new_sample <= 1'b0;
+
+            if (field_event) begin
+                desc_delta_lat <= $signed({1'b0, dbg_desc_count}) - $signed({1'b0, prev_desc_count});
+                free_delta_lat <= $signed({1'b0, dbg_free_cnt})   - $signed({1'b0, prev_free_cnt});
+
+                uf_delta_lat   <= delta10_reset_ok(dbg_underflow_low10, prev_uf);
+                of_delta_lat   <= delta10_reset_ok(dbg_overflow_low10,  prev_of);
+
+                if (drop_accum_work > (16'hFFFF - {13'd0, dbg_drop_used}))
+                    drop_accum_work <= 16'hFFFF;
+                else
+                    drop_accum_work <= drop_accum_work + {13'd0, dbg_drop_used};
+
+                if (dup_accum_work > (16'hFFFF - {13'd0, dbg_dup_used}))
+                    dup_accum_work <= 16'hFFFF;
+                else
+                    dup_accum_work <= dup_accum_work + {13'd0, dbg_dup_used};
+
+                if (dbg_resync_used) begin
+                    if (resync_accum_work != 16'hFFFF)
+                        resync_accum_work <= resync_accum_work + 16'd1;
+                end
+
+                prev_fieldtog_cnt <= dbg_cam_fieldtog_cnt;
+                prev_desc_count   <= dbg_desc_count;
+                prev_free_cnt     <= dbg_free_cnt;
+                prev_uf           <= dbg_underflow_low10;
+                prev_of           <= dbg_overflow_low10;
+            end
+
+            if (div_busy) begin
+                if (div_denom == 17'd0) begin
+                    div_busy            <= 1'b0;
+                    lines_per_field_est <= LPF_INVALID;
+                end else if (div_rem >= div_denom) begin
+                    div_rem <= div_rem - div_denom;
+
+                    if (div_quot != 10'h3FF)
+                        div_quot <= div_quot + 10'd1;
+                    else begin
+                        div_busy            <= 1'b0;
+                        lines_per_field_est <= 10'h3FF;
+                    end
+                end else begin
+                    div_busy            <= 1'b0;
+                    lines_per_field_est <= div_quot;
+                end
+            end
+
+            if (cnt == PERIOD-1) begin
+                if (!i2c_busy) begin
+                    cnt        <= 25'd0;
+
+                    out_page   <= page;
+                    out_value  <= value_mux;
+                    new_sample <= 1'b1;
+
+                    if (page == 8'd14) begin
+                        div_rem   <= delta17(dbg_cam_desc_sent_cnt, last_desc_sent);
+                        div_denom <= delta17(dbg_cam_fieldtog_cnt,  last_fieldtog);
+
+                        last_desc_sent <= dbg_cam_desc_sent_cnt;
+                        last_fieldtog  <= dbg_cam_fieldtog_cnt;
+
+                        div_quot <= 10'd0;
+
+                        if (delta17(dbg_cam_fieldtog_cnt, last_fieldtog) == 17'd0) begin
+                            div_busy            <= 1'b0;
+                            lines_per_field_est <= LPF_INVALID;
+                        end else begin
+                            div_busy <= 1'b1;
+                        end
+                    end
+
+                    if (page == (PAGES-1)) begin
+                        drop_accum         <= drop_accum_work;
+                        dup_accum          <= dup_accum_work;
+                        resync_accum       <= resync_accum_work;
+
+                        drop_accum_work    <= 16'd0;
+                        dup_accum_work     <= 16'd0;
+                        resync_accum_work  <= 16'd0;
+
+                        page <= 8'd0;
+                    end else begin
+                        page <= page + 8'd1;
+                    end
+                end
+            end else begin
+                cnt <= cnt + 25'd1;
+            end
+        end
+    end
+
+endmodule
+
+`default_nettype wire

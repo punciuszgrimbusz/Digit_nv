@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE gowin-synthesis-project>
+<Project>
+    <Version>beta</Version>
+    <Device id="GW1NR-9C" package="QFN88P" speed="6" partNumber="GW1NR-LV9QN88PC6/I5"/>
+    <FileList>
+        <File path="C:\Users\palko\Desktop\NVG\Uj_kezdes\Uj_kezdes4.3.3 BOB linebuff\src\async_gray_fifo.v" type="verilog"/>
+        <File path="C:\Users\palko\Desktop\NVG\Uj_kezdes\Uj_kezdes4.3.3 BOB linebuff\src\cam_crop_240.v" type="verilog"/>
+        <File path="C:\Users\palko\Desktop\NVG\Uj_kezdes\Uj_kezdes4.3.3 BOB linebuff\src\cam_field_diag.v" type="verilog"/>
+        <File path="C:\Users\palko\Desktop\NVG\Uj_kezdes\Uj_kezdes4.3.3 BOB linebuff\src\cam_field_line_counter.v" type="verilog"/>
+        <File path="C:\Users\palko\Desktop\NVG\Uj_kezdes\Uj_kezdes4.3.3 BOB linebuff\src\cam_frame_line_counter.v" type="verilog"/>
+        <File path="C:\Users\palko\Desktop\NVG\Uj_kezdes\Uj_kezdes4.3.3 BOB linebuff\src\cam_i2c_diag_lines.v" type="verilog"/>
+        <File path="C:\Users\palko\Desktop\NVG\Uj_kezdes\Uj_kezdes4.3.3 BOB linebuff\src\cdc_reqack_bus.v" type="verilog"/>
+        <File path="C:\Users\palko\Desktop\NVG\Uj_kezdes\Uj_kezdes4.3.3 BOB linebuff\src\gowin_clkdiv\gowin_clkdiv.v" type="verilog"/>
+        <File path="C:\Users\palko\Desktop\NVG\Uj_kezdes\Uj_kezdes4.3.3 BOB linebuff\src\gowin_rpll\gowin_rpll.v" type="verilog"/>
+        <File path="C:\Users\palko\Desktop\NVG\Uj_kezdes\Uj_kezdes4.3.3 BOB linebuff\src\hdmi_480p_core.v" type="verilog"/>
+        <File path="C:\Users\palko\Desktop\NVG\Uj_kezdes\Uj_kezdes4.3.3 BOB linebuff\src\i2c_diag_pager.v" type="verilog"/>
+        <File path="C:\Users\palko\Desktop\NVG\Uj_kezdes\Uj_kezdes4.3.3 BOB linebuff\src\i2c_diag_test240.v" type="verilog"/>
+        <File path="C:\Users\palko\Desktop\NVG\Uj_kezdes\Uj_kezdes4.3.3 BOB linebuff\src\i2c_frame_logger_arduino.v" type="verilog"/>
+        <File path="C:\Users\palko\Desktop\NVG\Uj_kezdes\Uj_kezdes4.3.3 BOB linebuff\src\line_buffer_dc.v" type="verilog"/>
+        <File path="C:\Users\palko\Desktop\NVG\Uj_kezdes\Uj_kezdes4.3.3 BOB linebuff\src\svo_defines.vh" type="verilog"/>
+        <File path="C:\Users\palko\Desktop\NVG\Uj_kezdes\Uj_kezdes4.3.3 BOB linebuff\src\svo_tmds.v" type="verilog"/>
+        <File path="C:\Users\palko\Desktop\NVG\Uj_kezdes\Uj_kezdes4.3.3 BOB linebuff\src\toggle_period_pix_to_cam.v" type="verilog"/>
+        <File path="C:\Users\palko\Desktop\NVG\Uj_kezdes\Uj_kezdes4.3.3 BOB linebuff\src\top.v" type="verilog"/>
+        <File path="C:\Users\palko\Desktop\NVG\Uj_kezdes\Uj_kezdes4.3.3 BOB linebuff\src\tvp5150_capture.v" type="verilog"/>
+        <File path="C:\Users\palko\Desktop\NVG\Uj_kezdes\Uj_kezdes4.3.3 BOB linebuff\src\tvp5150_i2c_init.v" type="verilog"/>
+    </FileList>
+    <OptionList>
+        <Option type="disable_insert_pad" value="0"/>
+        <Option type="global_freq" value="50.000"/>
+        <Option type="looplimit" value="2000"/>
+        <Option type="output_file" value="C:\Users\palko\Desktop\NVG\Uj_kezdes\Uj_kezdes4.3.3 BOB linebuff\impl\gwsynthesis\Uj_kezdes1.vg"/>
+        <Option type="print_all_synthesis_warning" value="0"/>
+        <Option type="ram_rw_check" value="0"/>
+        <Option type="top_module" value="top"/>
+        <Option type="vcc" value="1.2"/>
+        <Option type="verilog_language" value="verilog-2001"/>
+        <Option type="vhdl_language" value="vhdl-1993"/>
+    </OptionList>
+</Project>

@@ -1,0 +1,318 @@
+[
+ {
+  "InstFile" : "C:/Users/palko/Desktop/NVG/Uj_kezdes/Uj_kezdes4.3.3 BOB linebuff/src/async_gray_fifo.v",
+  "InstLine" : 19,
+  "InstName" : "async_gray_fifo",
+  "ModuleFile" : "C:/Users/palko/Desktop/NVG/Uj_kezdes/Uj_kezdes4.3.3 BOB linebuff/src/async_gray_fifo.v",
+  "ModuleLine" : 19,
+  "ModuleName" : "async_gray_fifo"
+ },
+ {
+  "InstFile" : "C:/Users/palko/Desktop/NVG/Uj_kezdes/Uj_kezdes4.3.3 BOB linebuff/src/cam_crop_240.v",
+  "InstLine" : 4,
+  "InstName" : "cam_crop_240",
+  "ModuleFile" : "C:/Users/palko/Desktop/NVG/Uj_kezdes/Uj_kezdes4.3.3 BOB linebuff/src/cam_crop_240.v",
+  "ModuleLine" : 4,
+  "ModuleName" : "cam_crop_240"
+ },
+ {
+  "InstFile" : "C:/Users/palko/Desktop/NVG/Uj_kezdes/Uj_kezdes4.3.3 BOB linebuff/src/cam_field_diag.v",
+  "InstLine" : 4,
+  "InstName" : "cam_field_diag",
+  "ModuleFile" : "C:/Users/palko/Desktop/NVG/Uj_kezdes/Uj_kezdes4.3.3 BOB linebuff/src/cam_field_diag.v",
+  "ModuleLine" : 4,
+  "ModuleName" : "cam_field_diag"
+ },
+ {
+  "InstFile" : "C:/Users/palko/Desktop/NVG/Uj_kezdes/Uj_kezdes4.3.3 BOB linebuff/src/cam_frame_line_counter.v",
+  "InstLine" : 8,
+  "InstName" : "cam_frame_line_counter",
+  "ModuleFile" : "C:/Users/palko/Desktop/NVG/Uj_kezdes/Uj_kezdes4.3.3 BOB linebuff/src/cam_frame_line_counter.v",
+  "ModuleLine" : 8,
+  "ModuleName" : "cam_frame_line_counter"
+ },
+ {
+  "InstFile" : "C:/Users/palko/Desktop/NVG/Uj_kezdes/Uj_kezdes4.3.3 BOB linebuff/src/cam_i2c_diag_lines.v",
+  "InstLine" : 4,
+  "InstName" : "cam_i2c_diag_lines",
+  "ModuleFile" : "C:/Users/palko/Desktop/NVG/Uj_kezdes/Uj_kezdes4.3.3 BOB linebuff/src/cam_i2c_diag_lines.v",
+  "ModuleLine" : 4,
+  "ModuleName" : "cam_i2c_diag_lines"
+ },
+ {
+  "InstFile" : "C:/Users/palko/Desktop/NVG/Uj_kezdes/Uj_kezdes4.3.3 BOB linebuff/src/i2c_diag_test240.v",
+  "InstLine" : 4,
+  "InstName" : "i2c_diag_test240",
+  "ModuleFile" : "C:/Users/palko/Desktop/NVG/Uj_kezdes/Uj_kezdes4.3.3 BOB linebuff/src/i2c_diag_test240.v",
+  "ModuleLine" : 4,
+  "ModuleName" : "i2c_diag_test240"
+ },
+ {
+  "InstFile" : "C:/Users/palko/Desktop/NVG/Uj_kezdes/Uj_kezdes4.3.3 BOB linebuff/src/top.v",
+  "InstLine" : 5,
+  "InstName" : "top",
+  "ModuleFile" : "C:/Users/palko/Desktop/NVG/Uj_kezdes/Uj_kezdes4.3.3 BOB linebuff/src/top.v",
+  "ModuleLine" : 5,
+  "ModuleName" : "top",
+  "SubInsts" : [
+   {
+    "InstFile" : "C:/Users/palko/Desktop/NVG/Uj_kezdes/Uj_kezdes4.3.3 BOB linebuff/src/top.v",
+    "InstLine" : 25,
+    "InstName" : "u_tvp_i2c",
+    "ModuleFile" : "C:/Users/palko/Desktop/NVG/Uj_kezdes/Uj_kezdes4.3.3 BOB linebuff/src/tvp5150_i2c_init.v",
+    "ModuleLine" : 14,
+    "ModuleName" : "tvp5150_i2c_init"
+   },
+   {
+    "InstFile" : "C:/Users/palko/Desktop/NVG/Uj_kezdes/Uj_kezdes4.3.3 BOB linebuff/src/top.v",
+    "InstLine" : 36,
+    "InstName" : "u_pll",
+    "ModuleFile" : "C:/Users/palko/Desktop/NVG/Uj_kezdes/Uj_kezdes4.3.3 BOB linebuff/src/gowin_rpll/gowin_rpll.v",
+    "ModuleLine" : 10,
+    "ModuleName" : "Gowin_rPLL"
+   },
+   {
+    "InstFile" : "C:/Users/palko/Desktop/NVG/Uj_kezdes/Uj_kezdes4.3.3 BOB linebuff/src/top.v",
+    "InstLine" : 43,
+    "InstName" : "u_div_5",
+    "ModuleFile" : "C:/Users/palko/Desktop/NVG/Uj_kezdes/Uj_kezdes4.3.3 BOB linebuff/src/gowin_clkdiv/gowin_clkdiv.v",
+    "ModuleLine" : 10,
+    "ModuleName" : "Gowin_CLKDIV"
+   },
+   {
+    "InstFile" : "C:/Users/palko/Desktop/NVG/Uj_kezdes/Uj_kezdes4.3.3 BOB linebuff/src/top.v",
+    "InstLine" : 50,
+    "InstName" : "u_Reset_Sync_pix",
+    "ModuleFile" : "C:/Users/palko/Desktop/NVG/Uj_kezdes/Uj_kezdes4.3.3 BOB linebuff/src/top.v",
+    "ModuleLine" : 274,
+    "ModuleName" : "Reset_Sync"
+   },
+   {
+    "InstFile" : "C:/Users/palko/Desktop/NVG/Uj_kezdes/Uj_kezdes4.3.3 BOB linebuff/src/top.v",
+    "InstLine" : 59,
+    "InstName" : "u_Reset_Sync_cam",
+    "ModuleFile" : "C:/Users/palko/Desktop/NVG/Uj_kezdes/Uj_kezdes4.3.3 BOB linebuff/src/top.v",
+    "ModuleLine" : 274,
+    "ModuleName" : "Reset_Sync"
+   },
+   {
+    "InstFile" : "C:/Users/palko/Desktop/NVG/Uj_kezdes/Uj_kezdes4.3.3 BOB linebuff/src/top.v",
+    "InstLine" : 72,
+    "InstName" : "u_cam_cap",
+    "ModuleFile" : "C:/Users/palko/Desktop/NVG/Uj_kezdes/Uj_kezdes4.3.3 BOB linebuff/src/tvp5150_capture.v",
+    "ModuleLine" : 4,
+    "ModuleName" : "tvp5150_capture"
+   },
+   {
+    "InstFile" : "C:/Users/palko/Desktop/NVG/Uj_kezdes/Uj_kezdes4.3.3 BOB linebuff/src/top.v",
+    "InstLine" : 89,
+    "InstName" : "u_cnt_raw",
+    "ModuleFile" : "C:/Users/palko/Desktop/NVG/Uj_kezdes/Uj_kezdes4.3.3 BOB linebuff/src/cam_field_line_counter.v",
+    "ModuleLine" : 4,
+    "ModuleName" : "cam_field_line_counter"
+   },
+   {
+    "InstFile" : "C:/Users/palko/Desktop/NVG/Uj_kezdes/Uj_kezdes4.3.3 BOB linebuff/src/top.v",
+    "InstLine" : 131,
+    "InstName" : "u_hdmi",
+    "ModuleFile" : "C:/Users/palko/Desktop/NVG/Uj_kezdes/Uj_kezdes4.3.3 BOB linebuff/src/hdmi_480p_core.v",
+    "ModuleLine" : 5,
+    "ModuleName" : "hdmi_480p_core",
+    "SubInsts" : [
+     {
+      "InstFile" : "C:/Users/palko/Desktop/NVG/Uj_kezdes/Uj_kezdes4.3.3 BOB linebuff/src/hdmi_480p_core.v",
+      "InstLine" : 146,
+      "InstName" : "u_rel_cdc",
+      "ModuleFile" : "C:/Users/palko/Desktop/NVG/Uj_kezdes/Uj_kezdes4.3.3 BOB linebuff/src/cdc_reqack_bus.v",
+      "ModuleLine" : 4,
+      "ModuleName" : "cdc_reqack_bus"
+     },
+     {
+      "InstFile" : "C:/Users/palko/Desktop/NVG/Uj_kezdes/Uj_kezdes4.3.3 BOB linebuff/src/hdmi_480p_core.v",
+      "InstLine" : 186,
+      "InstName" : "u_desc_cdc",
+      "ModuleFile" : "C:/Users/palko/Desktop/NVG/Uj_kezdes/Uj_kezdes4.3.3 BOB linebuff/src/cdc_reqack_bus.v",
+      "ModuleLine" : 4,
+      "ModuleName" : "cdc_reqack_bus"
+     },
+     {
+      "InstFile" : "C:/Users/palko/Desktop/NVG/Uj_kezdes/Uj_kezdes4.3.3 BOB linebuff/src/hdmi_480p_core.v",
+      "InstLine" : 433,
+      "InstName" : "u_buf0",
+      "ModuleFile" : "C:/Users/palko/Desktop/NVG/Uj_kezdes/Uj_kezdes4.3.3 BOB linebuff/src/line_buffer_dc.v",
+      "ModuleLine" : 4,
+      "ModuleName" : "line_buffer_dc"
+     },
+     {
+      "InstFile" : "C:/Users/palko/Desktop/NVG/Uj_kezdes/Uj_kezdes4.3.3 BOB linebuff/src/hdmi_480p_core.v",
+      "InstLine" : 434,
+      "InstName" : "u_buf1",
+      "ModuleFile" : "C:/Users/palko/Desktop/NVG/Uj_kezdes/Uj_kezdes4.3.3 BOB linebuff/src/line_buffer_dc.v",
+      "ModuleLine" : 4,
+      "ModuleName" : "line_buffer_dc"
+     },
+     {
+      "InstFile" : "C:/Users/palko/Desktop/NVG/Uj_kezdes/Uj_kezdes4.3.3 BOB linebuff/src/hdmi_480p_core.v",
+      "InstLine" : 435,
+      "InstName" : "u_buf2",
+      "ModuleFile" : "C:/Users/palko/Desktop/NVG/Uj_kezdes/Uj_kezdes4.3.3 BOB linebuff/src/line_buffer_dc.v",
+      "ModuleLine" : 4,
+      "ModuleName" : "line_buffer_dc"
+     },
+     {
+      "InstFile" : "C:/Users/palko/Desktop/NVG/Uj_kezdes/Uj_kezdes4.3.3 BOB linebuff/src/hdmi_480p_core.v",
+      "InstLine" : 436,
+      "InstName" : "u_buf3",
+      "ModuleFile" : "C:/Users/palko/Desktop/NVG/Uj_kezdes/Uj_kezdes4.3.3 BOB linebuff/src/line_buffer_dc.v",
+      "ModuleLine" : 4,
+      "ModuleName" : "line_buffer_dc"
+     },
+     {
+      "InstFile" : "C:/Users/palko/Desktop/NVG/Uj_kezdes/Uj_kezdes4.3.3 BOB linebuff/src/hdmi_480p_core.v",
+      "InstLine" : 437,
+      "InstName" : "u_buf4",
+      "ModuleFile" : "C:/Users/palko/Desktop/NVG/Uj_kezdes/Uj_kezdes4.3.3 BOB linebuff/src/line_buffer_dc.v",
+      "ModuleLine" : 4,
+      "ModuleName" : "line_buffer_dc"
+     },
+     {
+      "InstFile" : "C:/Users/palko/Desktop/NVG/Uj_kezdes/Uj_kezdes4.3.3 BOB linebuff/src/hdmi_480p_core.v",
+      "InstLine" : 438,
+      "InstName" : "u_buf5",
+      "ModuleFile" : "C:/Users/palko/Desktop/NVG/Uj_kezdes/Uj_kezdes4.3.3 BOB linebuff/src/line_buffer_dc.v",
+      "ModuleLine" : 4,
+      "ModuleName" : "line_buffer_dc"
+     },
+     {
+      "InstFile" : "C:/Users/palko/Desktop/NVG/Uj_kezdes/Uj_kezdes4.3.3 BOB linebuff/src/hdmi_480p_core.v",
+      "InstLine" : 439,
+      "InstName" : "u_buf6",
+      "ModuleFile" : "C:/Users/palko/Desktop/NVG/Uj_kezdes/Uj_kezdes4.3.3 BOB linebuff/src/line_buffer_dc.v",
+      "ModuleLine" : 4,
+      "ModuleName" : "line_buffer_dc"
+     },
+     {
+      "InstFile" : "C:/Users/palko/Desktop/NVG/Uj_kezdes/Uj_kezdes4.3.3 BOB linebuff/src/hdmi_480p_core.v",
+      "InstLine" : 440,
+      "InstName" : "u_buf7",
+      "ModuleFile" : "C:/Users/palko/Desktop/NVG/Uj_kezdes/Uj_kezdes4.3.3 BOB linebuff/src/line_buffer_dc.v",
+      "ModuleLine" : 4,
+      "ModuleName" : "line_buffer_dc"
+     },
+     {
+      "InstFile" : "C:/Users/palko/Desktop/NVG/Uj_kezdes/Uj_kezdes4.3.3 BOB linebuff/src/hdmi_480p_core.v",
+      "InstLine" : 441,
+      "InstName" : "u_buf8",
+      "ModuleFile" : "C:/Users/palko/Desktop/NVG/Uj_kezdes/Uj_kezdes4.3.3 BOB linebuff/src/line_buffer_dc.v",
+      "ModuleLine" : 4,
+      "ModuleName" : "line_buffer_dc"
+     },
+     {
+      "InstFile" : "C:/Users/palko/Desktop/NVG/Uj_kezdes/Uj_kezdes4.3.3 BOB linebuff/src/hdmi_480p_core.v",
+      "InstLine" : 442,
+      "InstName" : "u_buf9",
+      "ModuleFile" : "C:/Users/palko/Desktop/NVG/Uj_kezdes/Uj_kezdes4.3.3 BOB linebuff/src/line_buffer_dc.v",
+      "ModuleLine" : 4,
+      "ModuleName" : "line_buffer_dc"
+     },
+     {
+      "InstFile" : "C:/Users/palko/Desktop/NVG/Uj_kezdes/Uj_kezdes4.3.3 BOB linebuff/src/hdmi_480p_core.v",
+      "InstLine" : 443,
+      "InstName" : "u_buf10",
+      "ModuleFile" : "C:/Users/palko/Desktop/NVG/Uj_kezdes/Uj_kezdes4.3.3 BOB linebuff/src/line_buffer_dc.v",
+      "ModuleLine" : 4,
+      "ModuleName" : "line_buffer_dc"
+     },
+     {
+      "InstFile" : "C:/Users/palko/Desktop/NVG/Uj_kezdes/Uj_kezdes4.3.3 BOB linebuff/src/hdmi_480p_core.v",
+      "InstLine" : 444,
+      "InstName" : "u_buf11",
+      "ModuleFile" : "C:/Users/palko/Desktop/NVG/Uj_kezdes/Uj_kezdes4.3.3 BOB linebuff/src/line_buffer_dc.v",
+      "ModuleLine" : 4,
+      "ModuleName" : "line_buffer_dc"
+     },
+     {
+      "InstFile" : "C:/Users/palko/Desktop/NVG/Uj_kezdes/Uj_kezdes4.3.3 BOB linebuff/src/hdmi_480p_core.v",
+      "InstLine" : 445,
+      "InstName" : "u_buf12",
+      "ModuleFile" : "C:/Users/palko/Desktop/NVG/Uj_kezdes/Uj_kezdes4.3.3 BOB linebuff/src/line_buffer_dc.v",
+      "ModuleLine" : 4,
+      "ModuleName" : "line_buffer_dc"
+     },
+     {
+      "InstFile" : "C:/Users/palko/Desktop/NVG/Uj_kezdes/Uj_kezdes4.3.3 BOB linebuff/src/hdmi_480p_core.v",
+      "InstLine" : 446,
+      "InstName" : "u_buf13",
+      "ModuleFile" : "C:/Users/palko/Desktop/NVG/Uj_kezdes/Uj_kezdes4.3.3 BOB linebuff/src/line_buffer_dc.v",
+      "ModuleLine" : 4,
+      "ModuleName" : "line_buffer_dc"
+     },
+     {
+      "InstFile" : "C:/Users/palko/Desktop/NVG/Uj_kezdes/Uj_kezdes4.3.3 BOB linebuff/src/hdmi_480p_core.v",
+      "InstLine" : 447,
+      "InstName" : "u_buf14",
+      "ModuleFile" : "C:/Users/palko/Desktop/NVG/Uj_kezdes/Uj_kezdes4.3.3 BOB linebuff/src/line_buffer_dc.v",
+      "ModuleLine" : 4,
+      "ModuleName" : "line_buffer_dc"
+     },
+     {
+      "InstFile" : "C:/Users/palko/Desktop/NVG/Uj_kezdes/Uj_kezdes4.3.3 BOB linebuff/src/hdmi_480p_core.v",
+      "InstLine" : 448,
+      "InstName" : "u_buf15",
+      "ModuleFile" : "C:/Users/palko/Desktop/NVG/Uj_kezdes/Uj_kezdes4.3.3 BOB linebuff/src/line_buffer_dc.v",
+      "ModuleLine" : 4,
+      "ModuleName" : "line_buffer_dc"
+     },
+     {
+      "InstFile" : "C:/Users/palko/Desktop/NVG/Uj_kezdes/Uj_kezdes4.3.3 BOB linebuff/src/hdmi_480p_core.v",
+      "InstLine" : 1004,
+      "InstName" : "enc_b",
+      "ModuleFile" : "C:/Users/palko/Desktop/NVG/Uj_kezdes/Uj_kezdes4.3.3 BOB linebuff/src/svo_tmds.v",
+      "ModuleLine" : 4,
+      "ModuleName" : "svo_tmds"
+     },
+     {
+      "InstFile" : "C:/Users/palko/Desktop/NVG/Uj_kezdes/Uj_kezdes4.3.3 BOB linebuff/src/hdmi_480p_core.v",
+      "InstLine" : 1005,
+      "InstName" : "enc_g",
+      "ModuleFile" : "C:/Users/palko/Desktop/NVG/Uj_kezdes/Uj_kezdes4.3.3 BOB linebuff/src/svo_tmds.v",
+      "ModuleLine" : 4,
+      "ModuleName" : "svo_tmds"
+     },
+     {
+      "InstFile" : "C:/Users/palko/Desktop/NVG/Uj_kezdes/Uj_kezdes4.3.3 BOB linebuff/src/hdmi_480p_core.v",
+      "InstLine" : 1006,
+      "InstName" : "enc_r",
+      "ModuleFile" : "C:/Users/palko/Desktop/NVG/Uj_kezdes/Uj_kezdes4.3.3 BOB linebuff/src/svo_tmds.v",
+      "ModuleLine" : 4,
+      "ModuleName" : "svo_tmds"
+     }
+    ]
+   },
+   {
+    "InstFile" : "C:/Users/palko/Desktop/NVG/Uj_kezdes/Uj_kezdes4.3.3 BOB linebuff/src/top.v",
+    "InstLine" : 181,
+    "InstName" : "u_camfield_period",
+    "ModuleFile" : "C:/Users/palko/Desktop/NVG/Uj_kezdes/Uj_kezdes4.3.3 BOB linebuff/src/toggle_period_pix_to_cam.v",
+    "ModuleLine" : 8,
+    "ModuleName" : "toggle_period_pix_to_cam"
+   },
+   {
+    "InstFile" : "C:/Users/palko/Desktop/NVG/Uj_kezdes/Uj_kezdes4.3.3 BOB linebuff/src/top.v",
+    "InstLine" : 207,
+    "InstName" : "u_pager",
+    "ModuleFile" : "C:/Users/palko/Desktop/NVG/Uj_kezdes/Uj_kezdes4.3.3 BOB linebuff/src/i2c_diag_pager.v",
+    "ModuleLine" : 39,
+    "ModuleName" : "i2c_diag_pager"
+   },
+   {
+    "InstFile" : "C:/Users/palko/Desktop/NVG/Uj_kezdes/Uj_kezdes4.3.3 BOB linebuff/src/top.v",
+    "InstLine" : 258,
+    "InstName" : "u_logger",
+    "ModuleFile" : "C:/Users/palko/Desktop/NVG/Uj_kezdes/Uj_kezdes4.3.3 BOB linebuff/src/i2c_frame_logger_arduino.v",
+    "ModuleLine" : 4,
+    "ModuleName" : "i2c_frame_logger_arduino"
+   }
+  ]
+ }
+]
