@@ -41,6 +41,14 @@ module hdmi_480p_core (
     output reg  [15:0] dbg_alloc_fail_cnt_cam    = 16'd0,
     output reg  [15:0] dbg_rel_doublefree_cnt_cam= 16'd0,
 
+    // --- DEBUG: last drop/dup/resync positions ---
+    output reg  [15:0] dbg_last_drop_v_cam     = 16'd0,
+    output reg  [15:0] dbg_last_dup_v_cam      = 16'd0,
+    output reg  [15:0] dbg_last_resync_v_cam   = 16'd0,
+    output reg  [15:0] dbg_last_drop_h_cam     = 16'd0,
+    output reg  [15:0] dbg_last_dup_h_cam      = 16'd0,
+    output reg  [15:0] dbg_last_resync_h_cam   = 16'd0,
+
     // --- core cam-domain counterek ---
     output reg  [15:0] dbg_cam_fieldtog_cnt    = 16'd0,
     output reg  [15:0] dbg_cam_marker_inj_cnt  = 16'd0,
@@ -490,6 +498,14 @@ module hdmi_480p_core (
     reg       resync_used;
     reg [5:0] desc_min, desc_max;
 
+    reg [15:0] dbg_last_drop_v,    dbg_last_drop_v_n;
+    reg [15:0] dbg_last_dup_v,     dbg_last_dup_v_n;
+    reg [15:0] dbg_last_resync_v,  dbg_last_resync_v_n;
+
+    reg [15:0] dbg_last_drop_h,    dbg_last_drop_h_n;
+    reg [15:0] dbg_last_dup_h,     dbg_last_dup_h_n;
+    reg [15:0] dbg_last_resync_h,  dbg_last_resync_h_n;
+
     reg [9:0] underflow_cnt_n, overflow_cnt_n;
     reg [2:0] drop_used_n, dup_used_n;
     reg       resync_used_n;
@@ -541,8 +557,10 @@ module hdmi_480p_core (
     reg [BUF_BITS-1:0] rx_idx;
     reg                rx_was_owned;
 
-    reg [127:0] dbg_bus_pix = 128'd0;
-    reg         dbg_tog_pix = 1'b0;
+    localparam integer DBG_BUS_W = 224;
+
+    reg [DBG_BUS_W-1:0] dbg_bus_pix = {DBG_BUS_W{1'b0}};
+    reg                 dbg_tog_pix = 1'b0;
 
     always @(posedge pix_clk or negedge resetn) begin
         if (!resetn) begin
@@ -573,11 +591,19 @@ module hdmi_480p_core (
             desc_min      <= 6'd0;
             desc_max      <= 6'd0;
 
+            dbg_last_drop_v   <= 16'd0;
+            dbg_last_dup_v    <= 16'd0;
+            dbg_last_resync_v <= 16'd0;
+
+            dbg_last_drop_h   <= 16'd0;
+            dbg_last_dup_h    <= 16'd0;
+            dbg_last_resync_h <= 16'd0;
+
             seek_armed    <= 1'b0;
             seek_active   <= 1'b0;
             seek_rem      <= 5'd0;
 
-            dbg_bus_pix   <= 128'd0;
+            dbg_bus_pix   <= {DBG_BUS_W{1'b0}};
             dbg_tog_pix   <= 1'b0;
 
             pix_own_map            <= 16'h0000;
@@ -620,6 +646,14 @@ module hdmi_480p_core (
             resync_used_n    = resync_used;
             desc_min_n       = desc_min;
             desc_max_n       = desc_max;
+
+            dbg_last_drop_v_n   = dbg_last_drop_v;
+            dbg_last_dup_v_n    = dbg_last_dup_v;
+            dbg_last_resync_v_n = dbg_last_resync_v;
+
+            dbg_last_drop_h_n   = dbg_last_drop_h;
+            dbg_last_dup_h_n    = dbg_last_dup_h;
+            dbg_last_resync_h_n = dbg_last_resync_h;
 
             seek_armed_n     = seek_armed;
             seek_active_n    = seek_active;
@@ -712,6 +746,8 @@ module hdmi_480p_core (
                         seek_active_n = 1'b0;
                         seek_armed_n  = 1'b0;
                         resync_used_n = 1'b1;
+                        dbg_last_resync_v_n = {6'd0, v_cnt};
+                        dbg_last_resync_h_n = {5'd0, h_cnt};
                     end else begin
                         seek_rem_n = seek_rem_n - 1'b1;
                     end
@@ -734,6 +770,8 @@ module hdmi_480p_core (
                             dup_budget_n = dup_budget_n - 8'd1;
 
                         if (dup_used_n != 3'd7) dup_used_n = dup_used_n + 3'd1;
+                        dbg_last_dup_v_n = {6'd0, v_cnt};
+                        dbg_last_dup_h_n = {5'd0, h_cnt};
                         uf_streak_n = 4'd0; // duplázás = nem kérünk új sort most
                     end else begin
                         if ((v_cnt >= SAFE_START) && do_drop_n && (desc_count_n != 0)) begin
@@ -749,6 +787,8 @@ module hdmi_480p_core (
                             desc_count_n  = desc_count_n - 1'b1;
                             do_drop_n     = 1'b0;
                             if (drop_used_n != 3'd7) drop_used_n = drop_used_n + 3'd1;
+                            dbg_last_drop_v_n = {6'd0, v_cnt};
+                            dbg_last_drop_h_n = {5'd0, h_cnt};
                         end
 
                         if (desc_count_n != 0) begin
@@ -817,6 +857,13 @@ module hdmi_480p_core (
             if (frame_start) begin
                 // bus formatot NEM törjük: own_map low8, marker_off low4, desc_count low5
                 dbg_bus_pix <= {
+                    dbg_last_drop_v_n,           // [223:208]
+                    dbg_last_dup_v_n,            // [207:192]
+                    dbg_last_resync_v_n,         // [191:176]
+                    dbg_last_drop_h_n,           // [175:160]
+                    dbg_last_dup_h_n,            // [159:144]
+                    dbg_last_resync_h_n,         // [143:128]
+
                     pix_fault_sticky_n,          // [127:112]
                     pix_own_map_n[7:0],          // [111:104]
                     pix_rx_dupbuf_cnt_n,         // [103:88]
@@ -887,6 +934,14 @@ module hdmi_480p_core (
             pix_overflow_rel_lo8  <= pix_overflow_rel_lo8_n;
 
             uf_streak             <= uf_streak_n;
+
+            dbg_last_drop_v   <= dbg_last_drop_v_n;
+            dbg_last_dup_v    <= dbg_last_dup_v_n;
+            dbg_last_resync_v <= dbg_last_resync_v_n;
+
+            dbg_last_drop_h   <= dbg_last_drop_h_n;
+            dbg_last_dup_h    <= dbg_last_dup_h_n;
+            dbg_last_resync_h <= dbg_last_resync_h_n;
         end
     end
 
@@ -894,15 +949,15 @@ module hdmi_480p_core (
     // DEBUG CDC: pix -> cam snapshot bus (128-bit)
     // ------------------------------------------------------------
     reg [2:0]   dbg_tsync = 3'b000;
-    reg [127:0] dbg_bus_sync1 = 128'd0;
-    reg [127:0] dbg_bus_sync2 = 128'd0;
+    reg [DBG_BUS_W-1:0] dbg_bus_sync1 = {DBG_BUS_W{1'b0}};
+    reg [DBG_BUS_W-1:0] dbg_bus_sync2 = {DBG_BUS_W{1'b0}};
     wire dbg_new = dbg_tsync[2] ^ dbg_tsync[1];
 
     always @(posedge cam_pclk or negedge cam_resetn) begin
         if (!cam_resetn) begin
             dbg_tsync <= 3'b000;
-            dbg_bus_sync1 <= 128'd0;
-            dbg_bus_sync2 <= 128'd0;
+            dbg_bus_sync1 <= {DBG_BUS_W{1'b0}};
+            dbg_bus_sync2 <= {DBG_BUS_W{1'b0}};
 
             dbg_desc_count_cam      <= 5'd0;
             dbg_underflow_low10_cam <= 10'd0;
@@ -920,6 +975,13 @@ module hdmi_480p_core (
             dbg_rx_dupbuf_cnt_cam     <= 16'd0;
             dbg_rel_not_owned_cnt_cam <= 16'd0;
             dbg_overflow_rel_lo8_cam  <= 8'd0;
+
+            dbg_last_drop_v_cam     <= 16'd0;
+            dbg_last_dup_v_cam      <= 16'd0;
+            dbg_last_resync_v_cam   <= 16'd0;
+            dbg_last_drop_h_cam     <= 16'd0;
+            dbg_last_dup_h_cam      <= 16'd0;
+            dbg_last_resync_h_cam   <= 16'd0;
 
         end else begin
             dbg_tsync     <= {dbg_tsync[1:0], dbg_tog_pix};
@@ -943,6 +1005,13 @@ module hdmi_480p_core (
                 dbg_rx_dupbuf_cnt_cam     <= dbg_bus_sync2[103:88];
                 dbg_rel_not_owned_cnt_cam <= dbg_bus_sync2[87:72];
                 dbg_overflow_rel_lo8_cam  <= dbg_bus_sync2[71:64];
+
+                dbg_last_drop_v_cam     <= dbg_bus_sync2[223:208];
+                dbg_last_dup_v_cam      <= dbg_bus_sync2[207:192];
+                dbg_last_resync_v_cam   <= dbg_bus_sync2[191:176];
+                dbg_last_drop_h_cam     <= dbg_bus_sync2[175:160];
+                dbg_last_dup_h_cam      <= dbg_bus_sync2[159:144];
+                dbg_last_resync_h_cam   <= dbg_bus_sync2[143:128];
             end
         end
     end

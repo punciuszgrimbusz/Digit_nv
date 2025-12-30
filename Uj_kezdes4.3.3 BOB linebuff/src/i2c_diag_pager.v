@@ -35,11 +35,17 @@
 31 dup_accum – dup események összegzett száma (akkumulált)
 32 resync_accum – resync események összegzett száma (akkumulált)
 33 dbg_cam_descq_cnt_cam – CAM→PIX descriptor queue töltöttség (0..31/32)
+34 last_drop_v – utolsó drop esemény v_cnt értéke
+35 last_dup_v – utolsó dup esemény v_cnt értéke
+36 last_resync_v – utolsó resync esemény v_cnt értéke
+37 last_drop_h – utolsó drop esemény h_cnt értéke
+38 last_dup_h – utolsó dup esemény h_cnt értéke
+39 last_resync_h – utolsó resync esemény h_cnt értéke
 */
 module i2c_diag_pager #(
     parameter integer CLK_HZ  = 27000000,
     parameter integer PERIODS = 10,
-    parameter integer PAGES   = 34   // 0..33
+    parameter integer PAGES   = 40   // 0..39
 )(
     input  wire       clk,
     input  wire       resetn,
@@ -83,6 +89,13 @@ module i2c_diag_pager #(
     input  wire [15:0] dbg_rel_doublefree_cnt, // page25
 
     input  wire [5:0]  dbg_cam_descq_cnt_cam,  // page33
+
+    input  wire [15:0] dbg_last_drop_v,        // page34
+    input  wire [15:0] dbg_last_dup_v,         // page35
+    input  wire [15:0] dbg_last_resync_v,      // page36
+    input  wire [15:0] dbg_last_drop_h,        // page37
+    input  wire [15:0] dbg_last_dup_h,         // page38
+    input  wire [15:0] dbg_last_resync_h,      // page39
 
     output reg         new_sample = 1'b0,
     output reg [7:0]   out_page   = 8'd0,
@@ -189,6 +202,13 @@ module i2c_diag_pager #(
             8'd32: value_mux = resync_accum;
 
             8'd33: value_mux = {10'd0, dbg_cam_descq_cnt_cam};
+
+            8'd34: value_mux = dbg_last_drop_v;
+            8'd35: value_mux = dbg_last_dup_v;
+            8'd36: value_mux = dbg_last_resync_v;
+            8'd37: value_mux = dbg_last_drop_h;
+            8'd38: value_mux = dbg_last_dup_h;
+            8'd39: value_mux = dbg_last_resync_h;
 
             default: value_mux = 16'h0000;
         endcase
