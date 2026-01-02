@@ -803,6 +803,10 @@ module hdmi_480p_core (
                         cur_buf_valid_n = 1'b1;
 
                         if (desc_fifo[desc_rd_ptr_n][DESC_MARKER_BIT])
+                        cur_buf_idx_r_n = desc_fifo[desc_rd_ptr_n][BUF_BITS-1:0];
+                        cur_buf_valid_n = 1'b1;
+
+                        if (desc_fifo[desc_rd_ptr_n][BUF_BITS])
                             repeat_phase_n = 1'b0;
 
                         desc_rd_ptr_n = (desc_rd_ptr_n + 1'b1) & DESC_MASK;
@@ -855,6 +859,13 @@ module hdmi_480p_core (
                         pix_rel_not_owned_cnt_n              = pix_rel_not_owned_cnt_n + 16'd1;
                     end
                     pix_own_map_n = pix_own_map_n & ~onehot16(desc_fifo[desc_rd_ptr_n][DESC_BUF_MSB:DESC_BUF_LSB]);
+                    rel_accum_n = rel_accum_n | onehot16(desc_fifo[desc_rd_ptr_n][BUF_BITS-1:0]);
+
+                    if (!pix_own_map_n[desc_fifo[desc_rd_ptr_n][BUF_BITS-1:0]]) begin
+                        pix_fault_sticky_n[ST_REL_NOT_OWNED] = 1'b1;
+                        pix_rel_not_owned_cnt_n              = pix_rel_not_owned_cnt_n + 16'd1;
+                    end
+                    pix_own_map_n = pix_own_map_n & ~onehot16(desc_fifo[desc_rd_ptr_n][BUF_BITS-1:0]);
 
                     desc_rd_ptr_n = (desc_rd_ptr_n + 1'b1) & DESC_MASK;
                     desc_count_n  = desc_count_n - 1'b1;

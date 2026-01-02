@@ -494,6 +494,10 @@ module hdmi_480p_core (
                         cur_buf_valid_n = 1'b1;
 
                         if (desc_fifo[desc_rd_ptr_n][DESC_MARKER_BIT]) begin
+                        cur_buf_idx_r_n = desc_fifo[desc_rd_ptr_n][BUF_BITS-1:0];
+                        cur_buf_valid_n = 1'b1;
+
+                        if (desc_fifo[desc_rd_ptr_n][BUF_BITS]) begin
                             repeat_phase_n = 1'b0;
                         end
 
@@ -514,6 +518,7 @@ module hdmi_480p_core (
             if (line_start_any && (v_cnt >= V_ACTIVE)) begin
                 if ((desc_count_n != 0) && (do_drop_n || (desc_count_n > HIGH_WM))) begin
                     rel_accum_n   = rel_accum_n | onehot8(desc_fifo[desc_rd_ptr_n][DESC_BUF_MSB:DESC_BUF_LSB]);
+                    rel_accum_n   = rel_accum_n | onehot8(desc_fifo[desc_rd_ptr_n][BUF_BITS-1:0]);
                     desc_rd_ptr_n = (desc_rd_ptr_n + 1'b1) & DESC_MASK;
                     desc_count_n  = desc_count_n - 1'b1;
                     do_drop_n     = 1'b0;
