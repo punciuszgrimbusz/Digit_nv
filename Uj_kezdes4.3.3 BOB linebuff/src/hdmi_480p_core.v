@@ -88,6 +88,14 @@ module hdmi_480p_core (
     output reg  [5:0]  dbg_cam_block_idx_cam   = 6'd0,
     output wire [5:0]  dbg_blocks_per_field_target_cam,
     output reg  [15:0] dbg_cam_stopped_early_cnt_cam = 16'd0,
+    output reg  [15:0] cam_blocks_per_field_last = 16'd0,
+
+    // STEP16 diagnostics
+    output reg  [15:0] hdmi_frame_repeat_cnt_cam   = 16'd0,
+    output reg  [15:0] fill_lines_cnt_cam          = 16'd0,
+    output reg  [15:0] blocks_left_snapshot_cam    = 16'd0,
+    output reg  [15:0] marker_at_head_cam          = 16'd0,
+    output reg  [15:0] field_start_ok_cnt_cam      = 16'd0,
 
     // HDMI TMDS outputs
     output wire        tmds_clk_p,
@@ -281,9 +289,11 @@ module hdmi_480p_core (
 
     localparam integer FIELD_LINES_TARGET = (V_ACTIVE/2); // 240
     localparam integer BLOCK_LINES        = 8;
-    localparam integer BLOCKS_PER_FIELD_TARGET = (FIELD_LINES_TARGET / BLOCK_LINES); // 30 blokkok/field
+    localparam integer BLOCKS_PER_FIELD   = 30; // fixed 240 active lines -> 30 blocks
+    localparam integer BLOCKS_PER_FIELD_TARGET = BLOCKS_PER_FIELD; // 30 blokkok/field
     localparam [5:0]   BLOCKS_PER_FIELD_TARGET_6 = BLOCKS_PER_FIELD_TARGET;
     reg  [9:0] line_in_field = 10'd0;
+    reg  [15:0] cam_blocks_per_field = 16'd0;
 
     // blokk-számláló (8 soros blokkok)
     reg  [5:0] cam_block_idx = 6'd0;
@@ -363,6 +373,9 @@ module hdmi_480p_core (
             cam_desc_rd_ptr             <= {CAM_DESC_PTR_BITS{1'b0}};
             cam_desc_count              <= 6'd0;
 
+            cam_blocks_per_field        <= 16'd0;
+            cam_blocks_per_field_last   <= 16'd0;
+
             dbg_cam_fieldtog_cnt        <= 16'd0;
             dbg_cam_marker_inj_cnt      <= 16'd0;
             dbg_cam_marker_drop_or_defer_cnt <= 16'd0;
@@ -405,6 +418,9 @@ module hdmi_480p_core (
                 frame_flag_next_line <= 1'b1;
                 pending_marker       <= 1'b1;
                 dbg_cam_fieldtog_cnt <= dbg_cam_fieldtog_cnt + 16'd1;
+
+                cam_blocks_per_field_last <= cam_blocks_per_field;
+                cam_blocks_per_field      <= 16'd0;
 
                 if (cam_block_idx < BLOCKS_PER_FIELD_TARGET_6) begin
                     if (dbg_cam_stopped_early_cnt_cam != 16'hFFFF)
@@ -481,6 +497,8 @@ module hdmi_480p_core (
                         cam_desc_fifo[cam_desc_wr_ptr_calc] <= {pending_marker | cur_line_is_frame_start_cam, in_frame_id, cur_line_y, clean_buf_id(wr_buf_idx)};
                         cam_desc_wr_ptr_calc                = (cam_desc_wr_ptr_calc + 1'b1) & CAM_DESC_MASK;
                         cam_desc_count_calc                 = cam_desc_count_calc + 1'b1;
+
+                        cam_blocks_per_field <= (cam_blocks_per_field == 16'hFFFF) ? 16'hFFFF : cam_blocks_per_field + 16'd1;
 
                         dbg_cam_desc_sent_cnt <= dbg_cam_desc_sent_cnt + 16'd1;
                         if (pending_marker || cur_line_is_frame_start_cam) begin
@@ -649,6 +667,17 @@ module hdmi_480p_core (
     reg [15:0] hold_stuck_abort_cnt, hold_stuck_abort_cnt_n;
     localparam integer HOLD_STUCK_THRESH = 4;
 
+    // STEP16 playback guards
+    reg [5:0]  blocks_left, blocks_left_n;
+    reg        field_active, field_active_n;
+    reg        frame_repeat_active, frame_repeat_active_n;
+    reg        field_exhausted_fill, field_exhausted_fill_n;
+    reg [15:0] hdmi_frame_repeat_cnt, hdmi_frame_repeat_cnt_n;
+    reg [15:0] fill_lines_cnt, fill_lines_cnt_n;
+    reg [15:0] blocks_left_snapshot, blocks_left_snapshot_n;
+    reg        marker_at_head, marker_at_head_n;
+    reg [15:0] field_start_ok_cnt, field_start_ok_cnt_n;
+
     reg [15:0] desc_count_now, desc_count_now_n;
     reg [15:0] desc_err_now,   desc_err_now_n;
     reg [15:0] marker_distance, marker_distance_n;
@@ -728,7 +757,7 @@ module hdmi_480p_core (
     reg                           need_frame_resync,     need_frame_resync_n;
     reg                           freeze_frame,          freeze_frame_n;
 
-    localparam integer DBG_BUS_W = 504;
+    localparam integer DBG_BUS_W = 584;
 
     reg [DBG_BUS_W-1:0] dbg_bus_pix = {DBG_BUS_W{1'b0}};
     reg                 dbg_tog_pix = 1'b0;
@@ -754,6 +783,16 @@ module hdmi_480p_core (
             soft_dup_pending <= 1'b0;
             soft_corrected_this_frame <= 1'b0;
             allow_hard_resync <= 1'b1;
+
+            field_active      <= 1'b0;
+            frame_repeat_active <= 1'b0;
+            field_exhausted_fill <= 1'b0;
+            blocks_left       <= 6'd0;
+            hdmi_frame_repeat_cnt <= 16'd0;
+            fill_lines_cnt    <= 16'd0;
+            blocks_left_snapshot <= 16'd0;
+            marker_at_head    <= 1'b0;
+            field_start_ok_cnt<= 16'd0;
 
             align_budget   <= 4'd0;
             align_active   <= 1'b0;
@@ -869,6 +908,16 @@ module hdmi_480p_core (
             allow_hard_resync_n = allow_hard_resync;
             align_budget_n   = align_budget;
             align_active_n   = align_active;
+
+            field_active_n         = field_active;
+            frame_repeat_active_n  = frame_repeat_active;
+            field_exhausted_fill_n = field_exhausted_fill;
+            blocks_left_n          = blocks_left;
+            hdmi_frame_repeat_cnt_n= hdmi_frame_repeat_cnt;
+            fill_lines_cnt_n       = fill_lines_cnt;
+            blocks_left_snapshot_n = blocks_left_snapshot;
+            marker_at_head_n       = marker_at_head;
+            field_start_ok_cnt_n   = field_start_ok_cnt;
             dbg_align_pop_total_n = dbg_align_pop_total;
             dbg_align_hit_cnt_n   = dbg_align_hit_cnt;
             dbg_marker_miss_cnt_n = dbg_marker_miss_cnt;
@@ -994,169 +1043,50 @@ module hdmi_480p_core (
                 seek_rem_n    = 5'd0;
                 uf_streak_n   = 4'd0;
 
-                freeze_frame_n = 1'b0;
-
                 pop_lines_cnt_n  = 16'd0;
                 hold_lines_cnt_n = 16'd0;
 
-                marker_found_r_n      = 1'b0;
+                marker_found_r_n      = marker_at_head_n;
                 marker_off_r_n        = 5'd0;
                 align_active_n        = 1'b0;
                 align_budget_n        = 5'd0;
-                marker_distance_n     = 16'hFFFF;
+                marker_distance_n     = marker_at_head_n ? 16'd0 : 16'hFFFF;
 
-                if (desc_count_n != 0) begin
-                    if (desc_fifo[desc_rd_ptr_n][DESC_MARKER_BIT]) begin
-                        marker_found_r_n  = 1'b1;
-                        marker_distance_n = 16'd0;
-                    end else if (marker_found_pix) begin
-                        marker_found_r_n  = 1'b1;
-                        marker_off_r_n    = marker_off_pix;
-                        marker_distance_n = {11'd0, marker_off_pix};
+                marker_at_head_n = (desc_count_n != 0) && desc_fifo[desc_rd_ptr_n][DESC_MARKER_BIT];
 
-                        if (marker_off_pix != 5'd0) begin
-                            align_active_n = 1'b1;
-                            align_budget_n = (marker_off_pix > MAX_ALIGN_POP[4:0]) ? MAX_ALIGN_POP[4:0] : marker_off_pix;
-                            if (dbg_align_hit_cnt_n != 16'hFFFF)
-                                dbg_align_hit_cnt_n = dbg_align_hit_cnt_n + 16'd1;
-                        end
-                    end
-
-                    out_frame_id_expected_n = desc_fifo[desc_rd_ptr_n][DESC_FRAME_MSB:DESC_FRAME_LSB];
-                end
-
-                if (!marker_found_r_n) begin
-                    if (dbg_marker_miss_cnt_n != 16'hFFFF)
-                        dbg_marker_miss_cnt_n = dbg_marker_miss_cnt_n + 16'd1;
-                    if (marker_miss_streak_n != 4'hF)
-                        marker_miss_streak_n = marker_miss_streak_n + 4'd1;
+                if (marker_at_head_n) begin
+                    field_active_n         = 1'b1;
+                    frame_repeat_active_n  = 1'b0;
+                    field_exhausted_fill_n = 1'b0;
+                    blocks_left_n          = BLOCKS_PER_FIELD[5:0];
+                    if (field_start_ok_cnt_n != 16'hFFFF)
+                        field_start_ok_cnt_n = field_start_ok_cnt_n + 16'd1;
                 end else begin
-                    marker_miss_streak_n = 4'd0;
+                    field_active_n        = 1'b0;
+                    frame_repeat_active_n = 1'b1;
+                    field_exhausted_fill_n= 1'b0;
+                    blocks_left_n         = 6'd0;
+                    if (hdmi_frame_repeat_cnt_n != 16'hFFFF)
+                        hdmi_frame_repeat_cnt_n = hdmi_frame_repeat_cnt_n + 16'd1;
                 end
 
-                if (!marker_found_r_n && (marker_miss_streak_n >= (MARKER_MISS_THRESH-1))) begin
-                    align_active_n    = 1'b0;
-                    align_budget_n    = 5'd0;
-                    desc_rd_ptr_n     = desc_wr_ptr_n;
-                    desc_count_n      = 6'd0;
-                    rel_accum_n       = rel_accum_n | pix_own_map_n;
-                    pix_own_map_n     = 16'h0000;
-                    cur_buf_valid_n   = 1'b0;
+                freeze_frame_n = 1'b0;
 
-                    seek_armed_n         = 1'b1;
-                    need_frame_resync_n  = 1'b1;
-                    freeze_frame_n       = 1'b1;
-                    resync_used_n        = 1'b1;
-                    last_resync_reason_n = 16'd1;
-
-                    if (hard_resync_cnt_n != 16'hFFFF)
-                        hard_resync_cnt_n = hard_resync_cnt_n + 16'd1;
-
-                    marker_miss_streak_n = 4'd0;
-                end
+                out_frame_id_expected_n = desc_count_n ? desc_fifo[desc_rd_ptr_n][DESC_FRAME_MSB:DESC_FRAME_LSB] : out_frame_id_expected_n;
             end
 
             if (vblank_line_start && (v_cnt == V_ACTIVE)) begin
                 dbg_marker_off_snapshot_n = marker_found_r_n ? {3'd0, marker_off_r_n} : 8'd0;
-            end
-
-            if (vblank && safe_for_correction && seek_armed_n && !seek_active_n) begin
-                if (marker_found_pix) begin
-                    if (marker_off_pix == 5'd0) begin
-                        seek_armed_n = 1'b0;
-                    end else begin
-                        seek_active_n = 1'b1;
-                        seek_rem_n    = marker_off_pix;
-                    end
-                end
-            end
-
-            if (vblank && safe_for_correction && seek_active_n) begin
-                if ((seek_rem_n != 5'd0) && (desc_count_n != 0)) begin
-                    rel_accum_n = rel_accum_n | onehot16(clean_buf_id(desc_fifo[desc_rd_ptr_n][DESC_BUF_MSB:DESC_BUF_LSB]));
-
-                    if (!pix_own_map_n[clean_buf_id(desc_fifo[desc_rd_ptr_n][DESC_BUF_MSB:DESC_BUF_LSB])]) begin
-                        pix_fault_sticky_n[ST_REL_NOT_OWNED] = 1'b1;
-                        pix_rel_not_owned_cnt_n              = pix_rel_not_owned_cnt_n + 16'd1;
-                    end
-                    pix_own_map_n = pix_own_map_n & ~onehot16(clean_buf_id(desc_fifo[desc_rd_ptr_n][DESC_BUF_MSB:DESC_BUF_LSB]));
-
-                    desc_rd_ptr_n = (desc_rd_ptr_n + 1'b1) & DESC_MASK;
-                    desc_count_n  = desc_count_n - 1'b1;
-                    do_pop_desc   = 1'b1;
-
-                    if (dup_budget_n != 8'hFF)
-                        dup_budget_n = dup_budget_n + 8'd1;
-
-                        if (seek_rem_n == 5'd1) begin
-                            seek_rem_n    = 5'd0;
-                            seek_active_n = 1'b0;
-                            seek_armed_n  = 1'b0;
-                            resync_used_n = 1'b1;
-                            dbg_last_resync_v_n = {6'd0, v_cnt};
-                            dbg_last_resync_h_n = {5'd0, h_cnt};
-
-                            last_resync_reason_n = 16'd2;
-
-                            if (hard_resync_cnt_n != 16'hFFFF)
-                                hard_resync_cnt_n = hard_resync_cnt_n + 16'd1;
-
-                            need_frame_resync_n = 1'b0;
-                        end else begin
-                        seek_rem_n = seek_rem_n - 1'b1;
-                    end
-                end else begin
-                    if (seek_rem_n != 5'd0) begin
-                        pix_fault_sticky_n[ST_SEEK_EMPTY] = 1'b1;
-                    end
-                    seek_active_n = 1'b0;
-                    seek_armed_n  = 1'b0;
-                    seek_rem_n    = 5'd0;
-                end
-            end
-
-            if (align_active_n && safe_for_correction) begin
-                if (marker_found_r_n && (marker_off_r_n != 5'd0) && (align_budget_n != 5'd0) && (desc_count_n != 0)) begin
-                    drop_desc    = desc_fifo[desc_rd_ptr_n];
-                    drop_buf_idx = clean_buf_id(drop_desc[DESC_BUF_MSB:DESC_BUF_LSB]);
-                    drop_owned   = pix_own_map_n[drop_buf_idx];
-
-                    if (!drop_desc[DESC_MARKER_BIT]) begin
-                        if (drop_owned) begin
-                            rel_accum_n   = rel_accum_n | onehot16(drop_buf_idx);
-                            pix_own_map_n = pix_own_map_n & ~onehot16(drop_buf_idx);
-                        end else begin
-                            pix_fault_sticky_n[ST_REL_NOT_OWNED] = 1'b1;
-                            pix_rel_not_owned_cnt_n              = pix_rel_not_owned_cnt_n + 16'd1;
-                        end
-
-                        desc_rd_ptr_n = (desc_rd_ptr_n + 1'b1) & DESC_MASK;
-                        desc_count_n  = desc_count_n - 1'b1;
-
-                        do_pop_desc   = 1'b1;
-
-                        align_budget_n = align_budget_n - 5'd1;
-
-                        if (dbg_align_pop_total_n != 16'hFFFF)
-                            dbg_align_pop_total_n = dbg_align_pop_total_n + 16'd1;
-
-                        if (hard_resync_cnt_n != 16'hFFFF)
-                            hard_resync_cnt_n = hard_resync_cnt_n + 16'd1;
-
-                        soft_corrected_this_frame_n = 1'b1;
-                        last_resync_reason_n        = 16'd1;
-                    end else begin
-                        align_active_n = 1'b0;
-                    end
-                end else begin
-                    align_active_n = 1'b0;
-                end
+                blocks_left_snapshot_n    = {10'd0, blocks_left_n};
             end
 
             if (de && !de_d && (v_cnt < V_ACTIVE) && !freeze_frame_n) begin
                 force_repeat_line = 1'b0;
                 line_popped      = 1'b0;
                 hold_line_event  = 1'b0;
+
+                if (field_active_n && (blocks_left_n == 6'd0))
+                    field_exhausted_fill_n = 1'b1;
 
                 if (soft_dup_pending_n && cur_buf_valid_n) begin
                     force_repeat_line            = 1'b1;
@@ -1178,7 +1108,7 @@ module hdmi_480p_core (
 
                 if (!force_repeat_line) begin
                     if (!repeat_phase_n) begin
-                        if (desc_count_n != 0) begin
+                        if (!frame_repeat_active_n && field_active_n && !field_exhausted_fill_n && (desc_count_n != 0) && !desc_fifo[desc_rd_ptr_n][DESC_MARKER_BIT]) begin
                             line_popped = 1'b1;
                             uf_streak_n = 4'd0;
 
@@ -1200,26 +1130,36 @@ module hdmi_480p_core (
                                 cur_buf_idx_r_n = clean_buf_id(desc_fifo[desc_rd_ptr_n][DESC_BUF_MSB:DESC_BUF_LSB]);
                                 cur_buf_valid_n = 1'b1;
 
-                                if (desc_fifo[desc_rd_ptr_n][DESC_MARKER_BIT]) begin
-                                    cur_buf_idx_r_n = clean_buf_id(desc_fifo[desc_rd_ptr_n][BUF_BITS-1:0]);
-                                    cur_buf_valid_n = 1'b1;
-                                end
-
                                 if (desc_fifo[desc_rd_ptr_n][BUF_BITS])
                                     repeat_phase_n = 1'b0;
 
                                 do_pop_desc = 1'b1;
                                 desc_rd_ptr_n = (desc_rd_ptr_n + 1'b1) & DESC_MASK;
                                 desc_count_n  = desc_count_n - 1'b1;
+
+                                if (blocks_left_n != 6'd0) begin
+                                    blocks_left_n = blocks_left_n - 6'd1;
+                                    if (blocks_left_n == 6'd1)
+                                        field_exhausted_fill_n = 1'b1;
+                                end else begin
+                                    field_exhausted_fill_n = 1'b1;
+                                end
                             end
                         end else begin
-                            // UNDERFLOW
-                            hold_line_event = 1'b1;
-                            underflow_cnt_n = underflow_cnt_n + 10'd1;
-                            if (uf_streak_n != 4'hF) uf_streak_n = uf_streak_n + 4'd1;
+                            if (desc_count_n != 0 && desc_fifo[desc_rd_ptr_n][DESC_MARKER_BIT])
+                                field_exhausted_fill_n = 1'b1;
 
-                            // DEADLOCK BREAKER (16 buf-hoz skálázva)
-                            if (cur_buf_valid_n &&
+                            // HOLD / UNDERFLOW / EXHAUSTED
+                            hold_line_event = 1'b1;
+                            if (!frame_repeat_active_n && field_active_n && !field_exhausted_fill_n) begin
+                                underflow_cnt_n = underflow_cnt_n + 10'd1;
+                                if (uf_streak_n != 4'hF) uf_streak_n = uf_streak_n + 4'd1;
+                            end else begin
+                                if (fill_lines_cnt_n != 16'hFFFF)
+                                    fill_lines_cnt_n = fill_lines_cnt_n + 16'd1;
+                            end
+
+                            if (cur_buf_valid_n && !frame_repeat_active_n && !field_exhausted_fill_n &&
                                ((uf_streak_n >= 4'd2) || (popcount16(pix_own_map_n) >= 5'd14))) begin
 
                                 rel_accum_n = rel_accum_n | onehot16(cur_buf_idx_r_n);
@@ -1234,9 +1174,17 @@ module hdmi_480p_core (
                         end
                     end else begin
                         hold_line_event = 1'b1;
+                        if (field_exhausted_fill_n || frame_repeat_active_n) begin
+                            if (fill_lines_cnt_n != 16'hFFFF)
+                                fill_lines_cnt_n = fill_lines_cnt_n + 16'd1;
+                        end
                     end
                 end else begin
                     hold_line_event = 1'b1;
+                    if (field_exhausted_fill_n || frame_repeat_active_n) begin
+                        if (fill_lines_cnt_n != 16'hFFFF)
+                            fill_lines_cnt_n = fill_lines_cnt_n + 16'd1;
+                    end
                 end
 
                 if (force_repeat_line)
@@ -1358,6 +1306,11 @@ module hdmi_480p_core (
 
             if (frame_start) begin
                 dbg_bus_pix <= {
+                    hdmi_frame_repeat_cnt_n,     // [583:568]
+                    fill_lines_cnt_n,            // [567:552]
+                    blocks_left_snapshot_n,      // [551:536]
+                    {15'd0, marker_at_head_n},   // [535:520]
+                    field_start_ok_cnt_n,        // [519:504]
                     rel_sent_cnt_pix_int_n,     // [503:488]
                     pop_lines_cnt_n,            // [487:472]
                     hold_lines_cnt_n,           // [471:456]
@@ -1507,6 +1460,16 @@ module hdmi_480p_core (
             dbg_last_drop_h   <= dbg_last_drop_h_n;
             dbg_last_dup_h    <= dbg_last_dup_h_n;
             dbg_last_resync_h <= dbg_last_resync_h_n;
+
+            field_active          <= field_active_n;
+            frame_repeat_active   <= frame_repeat_active_n;
+            field_exhausted_fill  <= field_exhausted_fill_n;
+            blocks_left           <= blocks_left_n;
+            hdmi_frame_repeat_cnt <= hdmi_frame_repeat_cnt_n;
+            fill_lines_cnt        <= fill_lines_cnt_n;
+            blocks_left_snapshot  <= blocks_left_snapshot_n;
+            marker_at_head        <= marker_at_head_n;
+            field_start_ok_cnt    <= field_start_ok_cnt_n;
         end
     end
 
@@ -1565,12 +1528,24 @@ module hdmi_480p_core (
             dbg_hold_lines_cnt_cam       <= 16'd0;
             dbg_hold_stuck_abort_cnt_cam <= 16'd0;
 
+            hdmi_frame_repeat_cnt_cam   <= 16'd0;
+            fill_lines_cnt_cam          <= 16'd0;
+            blocks_left_snapshot_cam    <= 16'd0;
+            marker_at_head_cam          <= 16'd0;
+            field_start_ok_cnt_cam      <= 16'd0;
+
         end else begin
             dbg_tsync     <= {dbg_tsync[1:0], dbg_tog_pix};
             dbg_bus_sync1 <= dbg_bus_pix;
             dbg_bus_sync2 <= dbg_bus_sync1;
 
             if (dbg_new) begin
+                hdmi_frame_repeat_cnt_cam <= dbg_bus_sync2[583:568];
+                fill_lines_cnt_cam        <= dbg_bus_sync2[567:552];
+                blocks_left_snapshot_cam  <= dbg_bus_sync2[551:536];
+                marker_at_head_cam        <= dbg_bus_sync2[535:520];
+                field_start_ok_cnt_cam    <= dbg_bus_sync2[519:504];
+
                 rel_sent_cnt_pix <= dbg_bus_sync2[503:488];
                 dbg_pop_lines_cnt_cam        <= dbg_bus_sync2[487:472];
                 dbg_hold_lines_cnt_cam       <= dbg_bus_sync2[471:456];
