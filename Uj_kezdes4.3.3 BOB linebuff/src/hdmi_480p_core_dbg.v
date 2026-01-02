@@ -2,7 +2,15 @@
 `default_nettype none
 `include "svo_defines.vh"
 
-module hdmi_480p_core (
+// Debug core is optional; hide it behind a compile guard so wildcard builds
+// that include every .v file don't choke on the vendor-specific primitives
+// and extra debug wiring in this file.
+`ifdef USE_HDMI_480P_CORE_DBG
+
+// Debug/instrumented variant of the HDMI core. Keep its module name
+// distinct from the production `hdmi_480p_core` to avoid duplicate
+// definitions when both source files are included in a simulation.
+module hdmi_480p_core_dbg (
     input  wire        pix_clk,
     input  wire        pix_clk_5x,
     input  wire        resetn,
@@ -56,6 +64,13 @@ module hdmi_480p_core (
 
     reg [10:0] h_cnt = 11'd0;
     reg [9:0]  v_cnt = 10'd0;
+
+    // Debug snapshot CDC registers (declared early to avoid interleaving
+    // declarations and statements later in the file)
+    reg  [2:0]  dbg_tsync     = 3'b000;
+    reg  [63:0] dbg_bus_sync1 = 64'd0;
+    reg  [63:0] dbg_bus_sync2 = 64'd0;
+    wire        dbg_new;
 
     always @(posedge pix_clk or negedge resetn) begin
         if (!resetn) begin
@@ -595,10 +610,7 @@ module hdmi_480p_core (
     // ------------------------------------------------------------
     // DEBUG CDC: pix -> cam snapshot bus
     // ------------------------------------------------------------
-    reg [2:0]  dbg_tsync = 3'b000;
-    reg [63:0] dbg_bus_sync1 = 64'd0;
-    reg [63:0] dbg_bus_sync2 = 64'd0;
-    wire dbg_new = dbg_tsync[2] ^ dbg_tsync[1];
+    assign dbg_new = dbg_tsync[2] ^ dbg_tsync[1];
 
     always @(posedge cam_pclk or negedge cam_resetn) begin
         if (!cam_resetn) begin
@@ -715,5 +727,7 @@ module hdmi_480p_core (
     );
 
 endmodule
+
+`endif // USE_HDMI_480P_CORE_DBG
 
 `default_nettype wire
