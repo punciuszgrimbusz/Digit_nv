@@ -516,6 +516,8 @@ module hdmi_480p_core (
     localparam integer LOW_WM     = (NUM_BUFS - 8);  // 8 : duplicate threshold
     localparam integer SAFE_START = V_ACTIVE - 128;
 
+    wire safe_for_correction = (v_cnt >= SAFE_START);
+
     reg do_drop, do_drop_n;
 
     reg [7:0] dup_budget, dup_budget_n;
@@ -762,7 +764,7 @@ module hdmi_480p_core (
                     out_frame_id_expected_n = desc_fifo[desc_rd_ptr_n][DESC_FRAME_MSB:DESC_FRAME_LSB];
             end
 
-            if (vblank && seek_armed_n && !seek_active_n) begin
+            if (vblank && safe_for_correction && seek_armed_n && !seek_active_n) begin
                 if (marker_found_pix) begin
                     if (marker_off_pix == 5'd0) begin
                         seek_armed_n = 1'b0;
@@ -773,7 +775,7 @@ module hdmi_480p_core (
                 end
             end
 
-            if (vblank && seek_active_n) begin
+            if (vblank && safe_for_correction && seek_active_n) begin
                 if ((seek_rem_n != 5'd0) && (desc_count_n != 0)) begin
                     rel_accum_n = rel_accum_n | onehot16(desc_fifo[desc_rd_ptr_n][DESC_BUF_MSB:DESC_BUF_LSB]);
 
@@ -876,7 +878,7 @@ module hdmi_480p_core (
             end
 
             // Drift correction: only adjust descriptor depth during HDMI VBLANK
-            if (line_start_any && vblank) begin
+            if (line_start_any && vblank && safe_for_correction) begin
                 if (desc_count_n < LOW_WM) begin
                     if (dup_budget_n != 8'd0)
                         dup_budget_n = dup_budget_n - 8'd1;
