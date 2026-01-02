@@ -47,11 +47,15 @@
 42 hard_resync_cnt – hard resync események száma (reset utáni első lockra limitált)
 43 last_soft_corr_v – utolsó soft korrekció v_cnt értéke
 44 corr_skip_marker_cnt – marker miatt kihagyott soft-drop próbálkozások száma
+45 dbg_align_pop_total – marker align miatt eldobott descriptorok összesítve
+46 dbg_align_hit_cnt – hány frame-ben futott align korrekció
+47 dbg_marker_miss_cnt – marker_found hiányzások száma frame elején
+48 dbg_marker_off_snapshot – utolsó marker offset snapshot
 */
 module i2c_diag_pager #(
     parameter integer CLK_HZ  = 27000000,
-    parameter integer PERIODS = 10,
-    parameter integer PAGES   = 45   // 0..44
+    parameter integer PERIODS = 5,
+    parameter integer PAGES   = 49   // 0..48
 )(
     input  wire       clk,
     input  wire       resetn,
@@ -71,8 +75,13 @@ module i2c_diag_pager #(
     input  wire [4:0] dbg_desc_min,
     input  wire [4:0] dbg_desc_max,
 
-    input  wire [3:0] dbg_marker_off,
+    input  wire [4:0] dbg_marker_off,
     input  wire       dbg_marker_found,
+
+    input  wire [15:0] dbg_align_pop_total,
+    input  wire [15:0] dbg_align_hit_cnt,
+    input  wire [15:0] dbg_marker_miss_cnt,
+    input  wire [7:0]  dbg_marker_off_snapshot,
 
     input  wire [15:0] cam_field_period_lo,
     input  wire [15:0] cam_field_period_hi,
@@ -182,7 +191,7 @@ module i2c_diag_pager #(
             8'd6:  value_mux = {15'd0, dbg_resync_used};
             8'd7:  value_mux = {11'd0, dbg_desc_min};
             8'd8:  value_mux = {11'd0, dbg_desc_max};
-            8'd9:  value_mux = {11'd0, dbg_marker_found, dbg_marker_off};
+            8'd9:  value_mux = {10'd0, dbg_marker_found, dbg_marker_off};
 
             8'd10: value_mux = cam_field_period_lo;
             8'd11: value_mux = cam_field_period_hi;
@@ -227,6 +236,11 @@ module i2c_diag_pager #(
             8'd42: value_mux = dbg_hard_resync_cnt;
             8'd43: value_mux = dbg_last_soft_corr_v;
             8'd44: value_mux = dbg_corr_skip_marker_cnt;
+
+            8'd45: value_mux = dbg_align_pop_total;
+            8'd46: value_mux = dbg_align_hit_cnt;
+            8'd47: value_mux = dbg_marker_miss_cnt;
+            8'd48: value_mux = {8'd0, dbg_marker_off_snapshot};
 
             default: value_mux = 16'h0000;
         endcase

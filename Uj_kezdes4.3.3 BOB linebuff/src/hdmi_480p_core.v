@@ -24,8 +24,14 @@ module hdmi_480p_core (
     output reg         dbg_resync_used_cam     = 1'b0,
     output reg  [4:0]  dbg_desc_min_cam        = 5'd0,
     output reg  [4:0]  dbg_desc_max_cam        = 5'd0,
-    output reg  [3:0]  dbg_marker_off_cam      = 4'd0,
+    output reg  [4:0]  dbg_marker_off_cam      = 5'd0,
     output reg         dbg_marker_found_cam    = 1'b0,
+
+    // --- DEBUG: marker align telemetry ---
+    output reg  [15:0] dbg_align_pop_total_cam   = 16'd0,
+    output reg  [15:0] dbg_align_hit_cnt_cam     = 16'd0,
+    output reg  [15:0] dbg_marker_miss_cnt_cam   = 16'd0,
+    output reg  [7:0]  dbg_marker_off_snapshot_cam = 8'd0,
 
     // --- DEBUG V1 extra (PIX invariánsok -> CAM snapshot) ---
     output reg  [15:0] dbg_fault_sticky_cam      = 16'd0,
@@ -117,6 +123,7 @@ module hdmi_480p_core (
 
     wire frame_start = (h_cnt==11'd0) && (v_cnt==10'd0);
     wire line_start_any = (h_cnt == 11'd0);
+    wire vblank_line_start = line_start_any && vblank;
 
     // ------------------------------------------------------------
     // Buffers + descriptor FIFO
@@ -577,6 +584,16 @@ module hdmi_480p_core (
 
     reg       marker_found_pix;
     reg [4:0] marker_off_pix;   // 0..31
+    reg       marker_found_r, marker_found_r_n;
+    reg [4:0] marker_off_r, marker_off_r_n;
+    reg [7:0] dbg_marker_off_snapshot, dbg_marker_off_snapshot_n;
+
+    localparam integer MAX_ALIGN_POP = 8;
+    reg [3:0]  align_budget, align_budget_n;
+    reg        align_active, align_active_n;
+    reg [15:0] dbg_align_pop_total, dbg_align_pop_total_n;
+    reg [15:0] dbg_align_hit_cnt, dbg_align_hit_cnt_n;
+    reg [15:0] dbg_marker_miss_cnt, dbg_marker_miss_cnt_n;
     integer mi;
     reg [DESC_BITS-1:0] midx;
     reg force_repeat_line;
@@ -623,7 +640,7 @@ module hdmi_480p_core (
     reg                           need_frame_resync,     need_frame_resync_n;
     reg                           freeze_frame,          freeze_frame_n;
 
-    localparam integer DBG_BUS_W = 304;
+    localparam integer DBG_BUS_W = 360;
 
     reg [DBG_BUS_W-1:0] dbg_bus_pix = {DBG_BUS_W{1'b0}};
     reg                 dbg_tog_pix = 1'b0;
@@ -647,6 +664,16 @@ module hdmi_480p_core (
             soft_dup_pending <= 1'b0;
             soft_corrected_this_frame <= 1'b0;
             allow_hard_resync <= 1'b1;
+
+            align_budget   <= 4'd0;
+            align_active   <= 1'b0;
+            dbg_align_pop_total <= 16'd0;
+            dbg_align_hit_cnt   <= 16'd0;
+            dbg_marker_miss_cnt <= 16'd0;
+            dbg_marker_off_snapshot <= 8'd0;
+
+            marker_found_r <= 1'b0;
+            marker_off_r   <= 5'd0;
 
             cur_buf_idx_r <= 4'd0;
             cur_buf_valid <= 1'b0;
@@ -721,6 +748,14 @@ module hdmi_480p_core (
             soft_dup_pending_n = soft_dup_pending;
             soft_corrected_this_frame_n = soft_corrected_this_frame;
             allow_hard_resync_n = allow_hard_resync;
+            align_budget_n   = align_budget;
+            align_active_n   = align_active;
+            dbg_align_pop_total_n = dbg_align_pop_total;
+            dbg_align_hit_cnt_n   = dbg_align_hit_cnt;
+            dbg_marker_miss_cnt_n = dbg_marker_miss_cnt;
+            dbg_marker_off_snapshot_n = dbg_marker_off_snapshot;
+            marker_found_r_n = marker_found_r;
+            marker_off_r_n   = marker_off_r;
 
             cur_buf_idx_r_n  = cur_buf_idx_r;
             cur_buf_valid_n  = cur_buf_valid;
@@ -770,6 +805,9 @@ module hdmi_480p_core (
             out_frame_id_expected_n  = out_frame_id_expected;
             need_frame_resync_n      = need_frame_resync;
             freeze_frame_n           = freeze_frame;
+
+            marker_found_r_n = marker_found_pix;
+            marker_off_r_n   = marker_off_pix;
 
             if (!vsync && vsync_d && vblank) begin
                 do_drop_n      = 1'b0;
@@ -830,6 +868,29 @@ module hdmi_480p_core (
                     allow_hard_resync_n = 1'b0;
             end
 
+            if (vblank_line_start && (v_cnt == V_ACTIVE)) begin
+                align_budget_n = MAX_ALIGN_POP[3:0];
+                align_active_n = 1'b0;
+
+                if (marker_found_r_n) begin
+                    dbg_marker_off_snapshot_n = {3'd0, marker_off_r_n};
+
+                    if (marker_off_r_n != 5'd0) begin
+                        align_active_n = 1'b1;
+                        if (dbg_align_hit_cnt_n != 16'hFFFF)
+                            dbg_align_hit_cnt_n = dbg_align_hit_cnt_n + 16'd1;
+                    end
+                end else begin
+                    if (dbg_marker_miss_cnt_n != 16'hFFFF)
+                        dbg_marker_miss_cnt_n = dbg_marker_miss_cnt_n + 16'd1;
+                end
+            end
+
+            if (!vblank) begin
+                align_active_n = 1'b0;
+                align_budget_n = 4'd0;
+            end
+
             if (vblank && safe_for_correction && seek_armed_n && !seek_active_n) begin
                 if (marker_found_pix) begin
                     if (marker_off_pix == 5'd0) begin
@@ -880,6 +941,36 @@ module hdmi_480p_core (
                     seek_active_n = 1'b0;
                     seek_armed_n  = 1'b0;
                     seek_rem_n    = 5'd0;
+                end
+            end
+
+            if (align_active_n && vblank && safe_for_correction) begin
+                if (marker_found_r_n && (marker_off_r_n != 5'd0) && (align_budget_n != 4'd0) && (desc_count_n != 0)) begin
+                    drop_desc    = desc_fifo[desc_rd_ptr_n];
+                    drop_buf_idx = clean_buf_id(drop_desc[DESC_BUF_MSB:DESC_BUF_LSB]);
+                    drop_owned   = pix_own_map_n[drop_buf_idx];
+
+                    if (!drop_desc[DESC_MARKER_BIT]) begin
+                        if (drop_owned) begin
+                            rel_accum_n   = rel_accum_n | onehot16(drop_buf_idx);
+                            pix_own_map_n = pix_own_map_n & ~onehot16(drop_buf_idx);
+                        end else begin
+                            pix_fault_sticky_n[ST_REL_NOT_OWNED] = 1'b1;
+                            pix_rel_not_owned_cnt_n              = pix_rel_not_owned_cnt_n + 16'd1;
+                        end
+
+                        desc_rd_ptr_n = (desc_rd_ptr_n + 1'b1) & DESC_MASK;
+                        desc_count_n  = desc_count_n - 1'b1;
+
+                        align_budget_n = align_budget_n - 4'd1;
+
+                        if (dbg_align_pop_total_n != 16'hFFFF)
+                            dbg_align_pop_total_n = dbg_align_pop_total_n + 16'd1;
+                    end else begin
+                        align_active_n = 1'b0;
+                    end
+                end else begin
+                    align_active_n = 1'b0;
                 end
             end
 
@@ -1035,8 +1126,12 @@ module hdmi_480p_core (
             end
 
             if (frame_start) begin
-                // bus formatot NEM törjük: own_map low8, marker_off low4, desc_count low5
                 dbg_bus_pix <= {
+                    dbg_align_pop_total_n,       // [359:344]
+                    dbg_align_hit_cnt_n,         // [343:328]
+                    dbg_marker_miss_cnt_n,       // [327:312]
+                    dbg_marker_off_snapshot_n,   // [311:304]
+
                     soft_drop_lines_cnt_n,      // [303:288]
                     soft_dup_lines_cnt_n,       // [287:272]
                     hard_resync_cnt_n,          // [271:256]
@@ -1057,10 +1152,10 @@ module hdmi_480p_core (
                     pix_overflow_rel_lo8_n,      // [71:64]
 
                     8'd0,                        // [63:56]
-                    1'b0,                        // [55]
+                    marker_off_r_n[4],           // [55]
                     8'd0,                        // [54:47]
-                    marker_found_pix,            // [46]
-                    marker_off_pix[3:0],         // [45:42] low4
+                    marker_found_r_n,            // [46]
+                    marker_off_r_n[3:0],         // [45:42] low4
                     desc_max_n[4:0],             // [41:37] low5
                     desc_min_n[4:0],             // [36:32] low5
                     resync_used_n,               // [31]
@@ -1129,6 +1224,16 @@ module hdmi_480p_core (
             soft_corrected_this_frame <= soft_corrected_this_frame_n;
             allow_hard_resync         <= allow_hard_resync_n;
 
+            align_budget              <= align_budget_n;
+            align_active              <= align_active_n;
+            dbg_align_pop_total       <= dbg_align_pop_total_n;
+            dbg_align_hit_cnt         <= dbg_align_hit_cnt_n;
+            dbg_marker_miss_cnt       <= dbg_marker_miss_cnt_n;
+            dbg_marker_off_snapshot   <= dbg_marker_off_snapshot_n;
+
+            marker_found_r            <= marker_found_r_n;
+            marker_off_r              <= marker_off_r_n;
+
             last_soft_corr_v      <= last_soft_corr_v_n;
             soft_drop_lines_cnt   <= soft_drop_lines_cnt_n;
             soft_dup_lines_cnt    <= soft_dup_lines_cnt_n;
@@ -1146,7 +1251,7 @@ module hdmi_480p_core (
     end
 
     // ------------------------------------------------------------
-    // DEBUG CDC: pix -> cam snapshot bus (128-bit)
+    // DEBUG CDC: pix -> cam snapshot bus
     // ------------------------------------------------------------
     reg [2:0]   dbg_tsync = 3'b000;
     reg [DBG_BUS_W-1:0] dbg_bus_sync1 = {DBG_BUS_W{1'b0}};
@@ -1167,8 +1272,13 @@ module hdmi_480p_core (
             dbg_resync_used_cam     <= 1'b0;
             dbg_desc_min_cam        <= 5'd0;
             dbg_desc_max_cam        <= 5'd0;
-            dbg_marker_off_cam      <= 4'd0;
+            dbg_marker_off_cam      <= 5'd0;
             dbg_marker_found_cam    <= 1'b0;
+
+            dbg_align_pop_total_cam   <= 16'd0;
+            dbg_align_hit_cnt_cam     <= 16'd0;
+            dbg_marker_miss_cnt_cam   <= 16'd0;
+            dbg_marker_off_snapshot_cam <= 8'd0;
 
             dbg_fault_sticky_cam      <= 16'd0;
             dbg_own_map_cam           <= 8'd0;
@@ -1201,6 +1311,11 @@ module hdmi_480p_core (
                 dbg_last_soft_corr_v_cam    <= dbg_bus_sync2[255:240];
                 dbg_corr_skip_marker_cnt_cam<= dbg_bus_sync2[239:224];
 
+                dbg_align_pop_total_cam   <= dbg_bus_sync2[359:344];
+                dbg_align_hit_cnt_cam     <= dbg_bus_sync2[343:328];
+                dbg_marker_miss_cnt_cam   <= dbg_bus_sync2[327:312];
+                dbg_marker_off_snapshot_cam <= dbg_bus_sync2[311:304];
+
                 dbg_desc_count_cam      <= dbg_bus_sync2[4:0];
                 dbg_underflow_low10_cam <= dbg_bus_sync2[14:5];
                 dbg_overflow_low10_cam  <= dbg_bus_sync2[24:15];
@@ -1209,7 +1324,7 @@ module hdmi_480p_core (
                 dbg_resync_used_cam     <= dbg_bus_sync2[31];
                 dbg_desc_min_cam        <= dbg_bus_sync2[36:32];
                 dbg_desc_max_cam        <= dbg_bus_sync2[41:37];
-                dbg_marker_off_cam      <= dbg_bus_sync2[45:42];
+                dbg_marker_off_cam      <= {dbg_bus_sync2[55], dbg_bus_sync2[45:42]};
                 dbg_marker_found_cam    <= dbg_bus_sync2[46];
 
                 dbg_fault_sticky_cam      <= dbg_bus_sync2[127:112];
