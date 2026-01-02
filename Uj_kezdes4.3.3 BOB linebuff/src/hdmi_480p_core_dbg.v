@@ -81,6 +81,7 @@ module hdmi_480p_core (
                    (v_cnt <  V_ACTIVE + V_FP + V_SYNC));
 
     wire frame_start = (h_cnt==11'd0) && (v_cnt==10'd0);
+    wire line_start_any = (h_cnt == 11'd0);
 
     // ------------------------------------------------------------
     // Buffers + descriptor FIFO
@@ -455,58 +456,41 @@ module hdmi_480p_core (
             // line start in active video (DE rising)
             if (de && !de_d && (v_cnt < V_ACTIVE)) begin
                 if (!repeat_phase_n) begin
-                    if (v_cnt >= SAFE_START) begin
-                        // DROP one descriptor
-                        if (do_drop_n && (desc_count_n != 0)) begin
-                            rel_accum_n   = rel_accum_n | onehot8(desc_fifo[desc_rd_ptr_n][BUF_BITS-1:0]);
-                            desc_rd_ptr_n = (desc_rd_ptr_n + 1'b1) & DESC_MASK;
-                            desc_count_n  = desc_count_n - 1'b1;
-                            do_drop_n     = 1'b0;
-                            if (drop_used_n != 3'd7) drop_used_n = drop_used_n + 3'd1;
+                    if (desc_count_n != 0) begin
+                        if (cur_buf_valid_n) rel_accum_n = rel_accum_n | onehot8(cur_buf_idx_r_n);
+
+                        cur_buf_idx_r_n = desc_fifo[desc_rd_ptr_n][BUF_BITS-1:0];
+                        cur_buf_valid_n = 1'b1;
+
+                        if (desc_fifo[desc_rd_ptr_n][BUF_BITS]) begin
+                            repeat_phase_n = 1'b0;
                         end
 
-                        // DUP (do not pop)
-                        if (do_dup_n) begin
-                            do_dup_n = 1'b0;
-                            if (dup_used_n != 3'd7) dup_used_n = dup_used_n + 3'd1;
-                        end else begin
-                            if (desc_count_n != 0) begin
-                                if (cur_buf_valid_n) rel_accum_n = rel_accum_n | onehot8(cur_buf_idx_r_n);
-
-                                cur_buf_idx_r_n = desc_fifo[desc_rd_ptr_n][BUF_BITS-1:0];
-                                cur_buf_valid_n = 1'b1;
-
-                                if (desc_fifo[desc_rd_ptr_n][BUF_BITS]) begin
-                                    repeat_phase_n = 1'b0;
-                                end
-
-                                desc_rd_ptr_n = (desc_rd_ptr_n + 1'b1) & DESC_MASK;
-                                desc_count_n  = desc_count_n - 1'b1;
-                            end else begin
-                                underflow_cnt_n = underflow_cnt_n + 10'd1;
-                            end
-                        end
+                        desc_rd_ptr_n = (desc_rd_ptr_n + 1'b1) & DESC_MASK;
+                        desc_count_n  = desc_count_n - 1'b1;
                     end else begin
-                        // not safe-zone: normal pop
-                        if (desc_count_n != 0) begin
-                            if (cur_buf_valid_n) rel_accum_n = rel_accum_n | onehot8(cur_buf_idx_r_n);
-
-                            cur_buf_idx_r_n = desc_fifo[desc_rd_ptr_n][BUF_BITS-1:0];
-                            cur_buf_valid_n = 1'b1;
-
-                            if (desc_fifo[desc_rd_ptr_n][BUF_BITS]) begin
-                                repeat_phase_n = 1'b0;
-                            end
-
-                            desc_rd_ptr_n = (desc_rd_ptr_n + 1'b1) & DESC_MASK;
-                            desc_count_n  = desc_count_n - 1'b1;
-                        end else begin
-                            underflow_cnt_n = underflow_cnt_n + 10'd1;
-                        end
+                        underflow_cnt_n = underflow_cnt_n + 10'd1;
                     end
                 end
 
                 repeat_phase_n = ~repeat_phase_n;
+
+                // min/max update
+                if (desc_count_n < desc_min_n) desc_min_n = desc_count_n;
+                if (desc_count_n > desc_max_n) desc_max_n = desc_count_n;
+            end
+
+            if (line_start_any && (v_cnt >= V_ACTIVE)) begin
+                if ((desc_count_n != 0) && (do_drop_n || (desc_count_n > HIGH_WM))) begin
+                    rel_accum_n   = rel_accum_n | onehot8(desc_fifo[desc_rd_ptr_n][BUF_BITS-1:0]);
+                    desc_rd_ptr_n = (desc_rd_ptr_n + 1'b1) & DESC_MASK;
+                    desc_count_n  = desc_count_n - 1'b1;
+                    do_drop_n     = 1'b0;
+                    if (drop_used_n != 3'd7) drop_used_n = drop_used_n + 3'd1;
+                end else if (desc_count_n < LOW_WM) begin
+                    do_dup_n = 1'b0;
+                    if (dup_used_n != 3'd7) dup_used_n = dup_used_n + 3'd1;
+                end
 
                 // min/max update
                 if (desc_count_n < desc_min_n) desc_min_n = desc_count_n;

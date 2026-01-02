@@ -106,6 +106,7 @@ module hdmi_480p_core (
                    (v_cnt <  V_ACTIVE + V_FP + V_SYNC));
 
     wire frame_start = (h_cnt==11'd0) && (v_cnt==10'd0);
+    wire line_start_any = (h_cnt == 11'd0);
 
     // ------------------------------------------------------------
     // Buffers + descriptor FIFO
@@ -763,73 +764,44 @@ module hdmi_480p_core (
 
             if (de && !de_d && (v_cnt < V_ACTIVE)) begin
                 if (!repeat_phase_n) begin
-                    if ((v_cnt >= SAFE_START) && cur_buf_valid_n &&
-                        ((dup_budget_n != 8'd0) || (desc_count_n < LOW_WM))) begin
+                    if (desc_count_n != 0) begin
+                        uf_streak_n = 4'd0;
 
-                        if (dup_budget_n != 8'd0)
-                            dup_budget_n = dup_budget_n - 8'd1;
+                        if (cur_buf_valid_n) begin
+                            rel_accum_n = rel_accum_n | onehot16(cur_buf_idx_r_n);
 
-                        if (dup_used_n != 3'd7) dup_used_n = dup_used_n + 3'd1;
-                        dbg_last_dup_v_n = {6'd0, v_cnt};
-                        dbg_last_dup_h_n = {5'd0, h_cnt};
-                        uf_streak_n = 4'd0; // duplázás = nem kérünk új sort most
-                    end else begin
-                        if ((v_cnt >= SAFE_START) && do_drop_n && (desc_count_n != 0)) begin
-                            rel_accum_n = rel_accum_n | onehot16(desc_fifo[desc_rd_ptr_n][BUF_BITS-1:0]);
-
-                            if (!pix_own_map_n[desc_fifo[desc_rd_ptr_n][BUF_BITS-1:0]]) begin
+                            if (!pix_own_map_n[cur_buf_idx_r_n]) begin
                                 pix_fault_sticky_n[ST_REL_NOT_OWNED] = 1'b1;
                                 pix_rel_not_owned_cnt_n              = pix_rel_not_owned_cnt_n + 16'd1;
                             end
-                            pix_own_map_n = pix_own_map_n & ~onehot16(desc_fifo[desc_rd_ptr_n][BUF_BITS-1:0]);
-
-                            desc_rd_ptr_n = (desc_rd_ptr_n + 1'b1) & DESC_MASK;
-                            desc_count_n  = desc_count_n - 1'b1;
-                            do_drop_n     = 1'b0;
-                            if (drop_used_n != 3'd7) drop_used_n = drop_used_n + 3'd1;
-                            dbg_last_drop_v_n = {6'd0, v_cnt};
-                            dbg_last_drop_h_n = {5'd0, h_cnt};
+                            pix_own_map_n = pix_own_map_n & ~onehot16(cur_buf_idx_r_n);
                         end
 
-                        if (desc_count_n != 0) begin
-                            uf_streak_n = 4'd0;
+                        cur_buf_idx_r_n = desc_fifo[desc_rd_ptr_n][BUF_BITS-1:0];
+                        cur_buf_valid_n = 1'b1;
 
-                            if (cur_buf_valid_n) begin
-                                rel_accum_n = rel_accum_n | onehot16(cur_buf_idx_r_n);
+                        if (desc_fifo[desc_rd_ptr_n][BUF_BITS])
+                            repeat_phase_n = 1'b0;
 
-                                if (!pix_own_map_n[cur_buf_idx_r_n]) begin
-                                    pix_fault_sticky_n[ST_REL_NOT_OWNED] = 1'b1;
-                                    pix_rel_not_owned_cnt_n              = pix_rel_not_owned_cnt_n + 16'd1;
-                                end
-                                pix_own_map_n = pix_own_map_n & ~onehot16(cur_buf_idx_r_n);
+                        desc_rd_ptr_n = (desc_rd_ptr_n + 1'b1) & DESC_MASK;
+                        desc_count_n  = desc_count_n - 1'b1;
+                    end else begin
+                        // UNDERFLOW
+                        underflow_cnt_n = underflow_cnt_n + 10'd1;
+                        if (uf_streak_n != 4'hF) uf_streak_n = uf_streak_n + 4'd1;
+
+                        // DEADLOCK BREAKER (16 buf-hoz skálázva)
+                        if (cur_buf_valid_n &&
+                           ((uf_streak_n >= 4'd2) || (popcount16(pix_own_map_n) >= 5'd14))) begin
+
+                            rel_accum_n = rel_accum_n | onehot16(cur_buf_idx_r_n);
+
+                            if (!pix_own_map_n[cur_buf_idx_r_n]) begin
+                                pix_fault_sticky_n[ST_REL_NOT_OWNED] = 1'b1;
+                                pix_rel_not_owned_cnt_n              = pix_rel_not_owned_cnt_n + 16'd1;
                             end
-
-                            cur_buf_idx_r_n = desc_fifo[desc_rd_ptr_n][BUF_BITS-1:0];
-                            cur_buf_valid_n = 1'b1;
-
-                            if (desc_fifo[desc_rd_ptr_n][BUF_BITS])
-                                repeat_phase_n = 1'b0;
-
-                            desc_rd_ptr_n = (desc_rd_ptr_n + 1'b1) & DESC_MASK;
-                            desc_count_n  = desc_count_n - 1'b1;
-                        end else begin
-                            // UNDERFLOW
-                            underflow_cnt_n = underflow_cnt_n + 10'd1;
-                            if (uf_streak_n != 4'hF) uf_streak_n = uf_streak_n + 4'd1;
-
-                            // DEADLOCK BREAKER (16 buf-hoz skálázva)
-                            if (cur_buf_valid_n &&
-                               ((uf_streak_n >= 4'd2) || (popcount16(pix_own_map_n) >= 5'd14))) begin
-
-                                rel_accum_n = rel_accum_n | onehot16(cur_buf_idx_r_n);
-
-                                if (!pix_own_map_n[cur_buf_idx_r_n]) begin
-                                    pix_fault_sticky_n[ST_REL_NOT_OWNED] = 1'b1;
-                                    pix_rel_not_owned_cnt_n              = pix_rel_not_owned_cnt_n + 16'd1;
-                                end
-                                pix_own_map_n   = pix_own_map_n & ~onehot16(cur_buf_idx_r_n);
-                                cur_buf_valid_n = 1'b0;
-                            end
+                            pix_own_map_n   = pix_own_map_n & ~onehot16(cur_buf_idx_r_n);
+                            cur_buf_valid_n = 1'b0;
                         end
                     end
                 end
@@ -842,6 +814,41 @@ module hdmi_480p_core (
                 if (cur_buf_valid_n && (rel_accum_n & onehot16(cur_buf_idx_r_n))) begin
                     pix_fault_sticky_n[ST_REL_HITS_CUR] = 1'b1;
                 end
+            end
+
+            if (line_start_any && (v_cnt >= V_ACTIVE)) begin
+                if (desc_count_n < LOW_WM) begin
+                    if (dup_budget_n != 8'd0)
+                        dup_budget_n = dup_budget_n - 8'd1;
+
+                    if (dup_used_n != 3'd7) dup_used_n = dup_used_n + 3'd1;
+                    dbg_last_dup_v_n = {6'd0, v_cnt};
+                    dbg_last_dup_h_n = {5'd0, h_cnt};
+                    uf_streak_n = 4'd0;
+                end else if ((desc_count_n != 0) && (do_drop_n || (desc_count_n > HIGH_WM))) begin
+                    rel_accum_n = rel_accum_n | onehot16(desc_fifo[desc_rd_ptr_n][BUF_BITS-1:0]);
+
+                    if (!pix_own_map_n[desc_fifo[desc_rd_ptr_n][BUF_BITS-1:0]]) begin
+                        pix_fault_sticky_n[ST_REL_NOT_OWNED] = 1'b1;
+                        pix_rel_not_owned_cnt_n              = pix_rel_not_owned_cnt_n + 16'd1;
+                    end
+                    pix_own_map_n = pix_own_map_n & ~onehot16(desc_fifo[desc_rd_ptr_n][BUF_BITS-1:0]);
+
+                    desc_rd_ptr_n = (desc_rd_ptr_n + 1'b1) & DESC_MASK;
+                    desc_count_n  = desc_count_n - 1'b1;
+                    do_drop_n     = 1'b0;
+
+                    if (dup_budget_n != 8'hFF)
+                        dup_budget_n = dup_budget_n + 8'd1;
+
+                    if (drop_used_n != 3'd7) drop_used_n = drop_used_n + 3'd1;
+                    dbg_last_drop_v_n = {6'd0, v_cnt};
+                    dbg_last_drop_h_n = {5'd0, h_cnt};
+                    uf_streak_n = 4'd0;
+                end
+
+                if (desc_count_n < desc_min_n) desc_min_n = desc_count_n;
+                if (desc_count_n > desc_max_n) desc_max_n = desc_count_n;
             end
 
             if (!rel_pend_n && (rel_accum_n != 16'h0000)) begin
