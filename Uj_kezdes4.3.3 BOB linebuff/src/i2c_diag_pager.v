@@ -51,11 +51,17 @@
 46 dbg_align_hit_cnt – hány frame-ben futott align korrekció
 47 dbg_marker_miss_cnt – marker_found hiányzások száma frame elején
 48 dbg_marker_off_snapshot – utolsó marker offset snapshot
+49 desc_count_now – aktuális descriptor FIFO töltöttség (PIX domain, 16 bit)
+50 desc_err_now – előjeles eltérés a targethez képest (PIX domain)
+51 marker_distance – hány descriptor a következő markerig (0xFFFF = nincs a scanben)
+52 last_resync_reason – 0=none,1=marker_align,2=frameid_mismatch,3=under,4=over
+53 last_soft_corr_v – utolsó soft dup/drop v_cnt (ismételt exportra)
+54 corr_pending_flags – bit0=dup_pending, bit1=drop_pending, bit2=align_pending, bit3=has_corrected_this_frame
 */
 module i2c_diag_pager #(
     parameter integer CLK_HZ  = 27000000,
     parameter integer PERIODS = 5,
-    parameter integer PAGES   = 49   // 0..48
+    parameter integer PAGES   = 55   // 0..54
 )(
     input  wire       clk,
     input  wire       resetn,
@@ -117,6 +123,12 @@ module i2c_diag_pager #(
     input  wire [15:0] dbg_hard_resync_cnt,      // page42
     input  wire [15:0] dbg_last_soft_corr_v,     // page43
     input  wire [15:0] dbg_corr_skip_marker_cnt, // page44
+
+    input  wire [15:0] dbg_desc_count_now,       // page49
+    input  wire [15:0] dbg_desc_err_now,         // page50
+    input  wire [15:0] dbg_marker_distance,      // page51
+    input  wire [15:0] dbg_last_resync_reason,   // page52
+    input  wire [15:0] dbg_corr_pending_flags,   // page54
 
     output reg         new_sample = 1'b0,
     output reg [7:0]   out_page   = 8'd0,
@@ -241,6 +253,13 @@ module i2c_diag_pager #(
             8'd46: value_mux = dbg_align_hit_cnt;
             8'd47: value_mux = dbg_marker_miss_cnt;
             8'd48: value_mux = {8'd0, dbg_marker_off_snapshot};
+
+            8'd49: value_mux = dbg_desc_count_now;
+            8'd50: value_mux = dbg_desc_err_now;
+            8'd51: value_mux = dbg_marker_distance;
+            8'd52: value_mux = dbg_last_resync_reason;
+            8'd53: value_mux = dbg_last_soft_corr_v;
+            8'd54: value_mux = dbg_corr_pending_flags;
 
             default: value_mux = 16'h0000;
         endcase
