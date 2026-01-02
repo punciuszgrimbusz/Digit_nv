@@ -61,7 +61,10 @@ module hdmi_480p_core (
     output wire        tmds_clk_p,
     output wire        tmds_clk_n,
     output wire [2:0]  tmds_d_p,
-    output wire [2:0]  tmds_d_n
+    output wire [2:0]  tmds_d_n,
+
+    // VSYNC toggle for diagnostics (pix -> cam domain)
+    output reg         vsync_toggle_pix = 1'b0
 );
 
     // ------------------------------------------------------------
@@ -598,6 +601,7 @@ module hdmi_480p_core (
             have_any_line <= 1'b0;
             de_d          <= 1'b0;
             vsync_d       <= 1'b1;
+            vsync_toggle_pix <= 1'b0;
             repeat_phase  <= 1'b0;
 
             cur_buf_idx_r <= 4'd0;
@@ -657,6 +661,7 @@ module hdmi_480p_core (
             have_any_line_n  = have_any_line;
             de_d             <= de;
             vsync_d          <= vsync;
+            vsync_toggle_pix <= vsync_toggle_pix;
             repeat_phase_n   = repeat_phase;
 
             cur_buf_idx_r_n  = cur_buf_idx_r;
@@ -706,6 +711,8 @@ module hdmi_480p_core (
                 do_drop_n      = (desc_count > HIGH_WM);
                 repeat_phase_n = 1'b0;
                 uf_streak_n    = 4'd0;
+
+                vsync_toggle_pix <= ~vsync_toggle_pix;
             end
 
             if (desc_new_pix) begin
