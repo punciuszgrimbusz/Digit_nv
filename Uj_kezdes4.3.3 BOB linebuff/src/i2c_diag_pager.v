@@ -57,18 +57,20 @@
 52 last_resync_reason – 0=none,1=marker_align,2=frameid_mismatch,3=under,4=over
 53 last_soft_corr_v – utolsó soft dup/drop v_cnt (ismételt exportra)
 54 corr_pending_flags – bit0=dup_pending, bit1=drop_pending, bit2=align_pending, bit3=has_corrected_this_frame
-55 pop_lines_cnt – hány aktív sorhoz fogyasztottunk deskriptort az utolsó HDMI frame-ben
-56 hold_lines_cnt – hány aktív sor készült cached/dup/hold útvonalról pop nélkül
-57 hold_stuck_abort_cnt – hány alkalommal kellett hold/dup állapotot megszakítani
-58 cam_marker_drop_or_defer_cnt – marker beadás halasztások/kényszerített eldobások száma
-59 cam_block_idx – aktuális CAM blokk index (8 soros blokkok a fielden belül)
-60 blocks_per_field_target – cél blokk darabszám egy fielden belül
-61 cam_stopped_early_cnt – hányszor ért véget a field a targetnél kevesebb blokkal
+55 rel_sent_cnt_pix – hány release ment át PIX→CAM CDC-n (összesítve)
+56 rel_rx_cnt_cam – hány release-t fogadott CAM oldal
+57 pop_lines_cnt – hány aktív sorhoz fogyasztottunk deskriptort az utolsó HDMI frame-ben
+58 hold_lines_cnt – hány aktív sor készült cached/dup/hold útvonalról pop nélkül
+59 hold_stuck_abort_cnt – hány alkalommal kellett hold/dup állapotot megszakítani
+60 cam_marker_drop_or_defer_cnt – marker beadás halasztások/kényszerített eldobások száma
+61 cam_block_idx – aktuális CAM blokk index (8 soros blokkok a fielden belül)
+62 blocks_per_field_target – cél blokk darabszám egy fielden belül
+63 cam_stopped_early_cnt – hányszor ért véget a field a targetnél kevesebb blokkal
 */
 module i2c_diag_pager #(
     parameter integer CLK_HZ  = 27000000,
     parameter integer PERIODS = 3,
-    parameter integer PAGES   = 62   // 0..61
+    parameter integer PAGES   = 64   // 0..63
 )(
     input  wire       clk,
     input  wire       resetn,
@@ -115,6 +117,8 @@ module i2c_diag_pager #(
     input  wire [3:0]  dbg_free_max,           // page23 (low4)
     input  wire [15:0] dbg_alloc_fail_cnt,     // page24
     input  wire [15:0] dbg_rel_doublefree_cnt, // page25
+    input  wire [15:0] rel_sent_cnt_pix,       // page55
+    input  wire [15:0] rel_rx_cnt_cam,         // page56
 
     input  wire [5:0]  dbg_cam_descq_cnt_cam,  // page33
     input  wire [5:0]  dbg_cam_block_idx_cam,  // page59
@@ -276,14 +280,16 @@ module i2c_diag_pager #(
             8'd53: value_mux = dbg_last_soft_corr_v;
             8'd54: value_mux = dbg_corr_pending_flags;
 
-            8'd55: value_mux = dbg_pop_lines_cnt;
-            8'd56: value_mux = dbg_hold_lines_cnt;
-            8'd57: value_mux = dbg_hold_stuck_abort_cnt;
-            8'd58: value_mux = dbg_cam_marker_drop_or_defer_cnt;
+            8'd55: value_mux = rel_sent_cnt_pix;
+            8'd56: value_mux = rel_rx_cnt_cam;
+            8'd57: value_mux = dbg_pop_lines_cnt;
+            8'd58: value_mux = dbg_hold_lines_cnt;
+            8'd59: value_mux = dbg_hold_stuck_abort_cnt;
+            8'd60: value_mux = dbg_cam_marker_drop_or_defer_cnt;
 
-            8'd59: value_mux = {10'd0, dbg_cam_block_idx_cam};
-            8'd60: value_mux = {10'd0, dbg_blocks_per_field_target_cam};
-            8'd61: value_mux = dbg_cam_stopped_early_cnt_cam;
+            8'd61: value_mux = {10'd0, dbg_cam_block_idx_cam};
+            8'd62: value_mux = {10'd0, dbg_blocks_per_field_target_cam};
+            8'd63: value_mux = dbg_cam_stopped_early_cnt_cam;
 
             default: value_mux = 16'h0000;
         endcase
