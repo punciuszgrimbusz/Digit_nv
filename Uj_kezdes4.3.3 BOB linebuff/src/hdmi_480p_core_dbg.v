@@ -81,6 +81,7 @@ module hdmi_480p_core (
                    (v_cnt <  V_ACTIVE + V_FP + V_SYNC));
 
     wire frame_start = (h_cnt==11'd0) && (v_cnt==10'd0);
+    wire line_start_any = (h_cnt == 11'd0);
 
     // ------------------------------------------------------------
     // Buffers + descriptor FIFO
@@ -92,8 +93,19 @@ module hdmi_480p_core (
     localparam integer DESC_BITS  = 4;
     localparam [DESC_BITS-1:0] DESC_MASK = 4'hF;
 
-    // desc_bus[BUF_BITS] = marker
-    // desc_bus[BUF_BITS-1:0] = buf_idx
+    localparam integer CAM_DESC_FRAME_BITS = 16;
+    localparam integer CAM_DESC_Y_BITS     = 10;
+    localparam integer CAM_DESC_DATA_BITS  = 1 + CAM_DESC_FRAME_BITS + CAM_DESC_Y_BITS + BUF_BITS;
+
+    localparam integer DESC_BUF_LSB    = 0;
+    localparam integer DESC_BUF_MSB    = BUF_BITS-1;
+    localparam integer DESC_Y_LSB      = BUF_BITS;
+    localparam integer DESC_Y_MSB      = DESC_Y_LSB + CAM_DESC_Y_BITS - 1;
+    localparam integer DESC_FRAME_LSB  = DESC_Y_LSB + CAM_DESC_Y_BITS;
+    localparam integer DESC_FRAME_MSB  = DESC_FRAME_LSB + CAM_DESC_FRAME_BITS - 1;
+    localparam integer DESC_MARKER_BIT = CAM_DESC_DATA_BITS-1;
+
+    // desc_bus layout: {marker, frame_id, line_y, buf_idx}
 
     function [7:0] onehot8;
         input [2:0] idx;
@@ -142,16 +154,25 @@ module hdmi_480p_core (
     reg frame_flag_next_line;
     reg cur_line_is_frame_start_cam;
 
-    reg [BUF_BITS:0] desc_bus;
+    reg [CAM_DESC_DATA_BITS-1:0] desc_bus;
     reg              desc_toggle;
     reg              desc_pending;
 
     reg drop_this_line;
 
+    reg [CAM_DESC_FRAME_BITS-1:0] in_frame_id;
+    reg [CAM_DESC_Y_BITS-1:0]     cur_line_y;
+    reg [9:0]                     line_in_field;
+
     wire frame_edge = cam_frame_toggle ^ cam_frame_toggle_d;
 
     reg [BUF_BITS-1:0] alloc_idx;
     reg                alloc_ok;
+
+    wire line_start = cam_line_valid && !cam_line_valid_d;
+    wire line_end   = !cam_line_valid && cam_line_valid_d;
+
+    wire [9:0] line_in_field_pre = frame_edge ? 10'd0 : line_in_field;
     always @* begin
         alloc_ok  = 1'b1;
         alloc_idx = 3'd0;
@@ -178,10 +199,14 @@ module hdmi_480p_core (
             cam_frame_toggle_d          <= 1'b0;
             frame_flag_next_line        <= 1'b0;
             cur_line_is_frame_start_cam <= 1'b0;
-            desc_bus                    <= 4'd0;
+            desc_bus                    <= {CAM_DESC_DATA_BITS{1'b0}};
             desc_toggle                 <= 1'b0;
             desc_pending                <= 1'b0;
             drop_this_line              <= 1'b0;
+
+            in_frame_id                 <= {CAM_DESC_FRAME_BITS{1'b0}};
+            cur_line_y                  <= {CAM_DESC_Y_BITS{1'b0}};
+            line_in_field               <= 10'd0;
 
             dbg_cam_fieldtog_cnt        <= 16'd0;
             dbg_cam_marker_inj_cnt      <= 16'd0;
@@ -204,13 +229,20 @@ module hdmi_480p_core (
             if (frame_edge) begin
                 frame_flag_next_line <= 1'b1;
                 dbg_cam_fieldtog_cnt <= dbg_cam_fieldtog_cnt + 16'd1;
+
+                in_frame_id <= in_frame_id + {{(CAM_DESC_FRAME_BITS-1){1'b0}}, 1'b1};
+                line_in_field <= 10'd0;
+                cur_line_y    <= {CAM_DESC_Y_BITS{1'b0}};
             end
 
-            if (cam_line_valid && !cam_line_valid_d) begin
+            if (line_start) begin
                 wr_addr <= 10'd0;
 
                 cur_line_is_frame_start_cam <= frame_flag_next_line | frame_edge;
                 frame_flag_next_line        <= 1'b0;
+
+                cur_line_y    <= line_in_field_pre[CAM_DESC_Y_BITS-1:0];
+                line_in_field <= line_in_field_pre + 10'd1;
 
                 if (alloc_ok) begin
                     wr_buf_idx            <= alloc_idx;
@@ -225,9 +257,9 @@ module hdmi_480p_core (
                 if (wr_addr != 10'h3FF) wr_addr <= wr_addr + 10'd1;
             end
 
-            if (!cam_line_valid && cam_line_valid_d) begin
+            if (line_end) begin
                 if (!drop_this_line) begin
-                    desc_bus     <= {cur_line_is_frame_start_cam, wr_buf_idx};
+                    desc_bus     <= {cur_line_is_frame_start_cam, in_frame_id, cur_line_y, wr_buf_idx};
                     desc_pending <= 1'b1;
 
                     dbg_cam_desc_sent_cnt <= dbg_cam_desc_sent_cnt + 16'd1;
@@ -273,14 +305,14 @@ module hdmi_480p_core (
     // PIX DOMAIN: descriptor sync + FIFO + bob + watermark correction
     // ============================================================
     reg [2:0]        desc_toggle_sync;
-    reg [BUF_BITS:0] desc_bus_sync1;
-    reg [BUF_BITS:0] desc_bus_sync2;
+    reg [CAM_DESC_DATA_BITS-1:0] desc_bus_sync1;
+    reg [CAM_DESC_DATA_BITS-1:0] desc_bus_sync2;
 
     always @(posedge pix_clk or negedge resetn) begin
         if (!resetn) begin
             desc_toggle_sync <= 3'b000;
-            desc_bus_sync1   <= 4'd0;
-            desc_bus_sync2   <= 4'd0;
+            desc_bus_sync1   <= {CAM_DESC_DATA_BITS{1'b0}};
+            desc_bus_sync2   <= {CAM_DESC_DATA_BITS{1'b0}};
         end else begin
             desc_toggle_sync <= {desc_toggle_sync[1:0], desc_toggle};
             desc_bus_sync1   <= desc_bus;
@@ -290,7 +322,7 @@ module hdmi_480p_core (
 
     wire desc_new = desc_toggle_sync[2] ^ desc_toggle_sync[1];
 
-    reg [BUF_BITS:0] desc_fifo [0:DESC_DEPTH-1];
+    reg [CAM_DESC_DATA_BITS-1:0] desc_fifo [0:DESC_DEPTH-1];
     reg [DESC_BITS-1:0] desc_wr_ptr;
     reg [DESC_BITS-1:0] desc_rd_ptr;
     reg [4:0]           desc_count;
@@ -345,7 +377,7 @@ module hdmi_480p_core (
         for (mi = 0; mi < DESC_DEPTH; mi = mi + 1) begin
             if (!marker_found_pix && (mi < desc_count)) begin
                 midx = (desc_rd_ptr + mi[DESC_BITS-1:0]) & DESC_MASK;
-                if (desc_fifo[midx][BUF_BITS]) begin
+                if (desc_fifo[midx][DESC_MARKER_BIT]) begin
                     marker_found_pix = 1'b1;
                     marker_off_pix   = mi[3:0];
                 end
@@ -448,65 +480,48 @@ module hdmi_480p_core (
                     desc_count_n             = desc_count_n + 1'b1;
                 end else begin
                     overflow_cnt_n = overflow_cnt_n + 10'd1;
-                    rel_accum_n    = rel_accum_n | onehot8(desc_bus_sync2[BUF_BITS-1:0]);
+                    rel_accum_n    = rel_accum_n | onehot8(desc_bus_sync2[DESC_BUF_MSB:DESC_BUF_LSB]);
                 end
             end
 
             // line start in active video (DE rising)
             if (de && !de_d && (v_cnt < V_ACTIVE)) begin
                 if (!repeat_phase_n) begin
-                    if (v_cnt >= SAFE_START) begin
-                        // DROP one descriptor
-                        if (do_drop_n && (desc_count_n != 0)) begin
-                            rel_accum_n   = rel_accum_n | onehot8(desc_fifo[desc_rd_ptr_n][BUF_BITS-1:0]);
-                            desc_rd_ptr_n = (desc_rd_ptr_n + 1'b1) & DESC_MASK;
-                            desc_count_n  = desc_count_n - 1'b1;
-                            do_drop_n     = 1'b0;
-                            if (drop_used_n != 3'd7) drop_used_n = drop_used_n + 3'd1;
+                    if (desc_count_n != 0) begin
+                        if (cur_buf_valid_n) rel_accum_n = rel_accum_n | onehot8(cur_buf_idx_r_n);
+
+                        cur_buf_idx_r_n = desc_fifo[desc_rd_ptr_n][DESC_BUF_MSB:DESC_BUF_LSB];
+                        cur_buf_valid_n = 1'b1;
+
+                        if (desc_fifo[desc_rd_ptr_n][DESC_MARKER_BIT]) begin
+                            repeat_phase_n = 1'b0;
                         end
 
-                        // DUP (do not pop)
-                        if (do_dup_n) begin
-                            do_dup_n = 1'b0;
-                            if (dup_used_n != 3'd7) dup_used_n = dup_used_n + 3'd1;
-                        end else begin
-                            if (desc_count_n != 0) begin
-                                if (cur_buf_valid_n) rel_accum_n = rel_accum_n | onehot8(cur_buf_idx_r_n);
-
-                                cur_buf_idx_r_n = desc_fifo[desc_rd_ptr_n][BUF_BITS-1:0];
-                                cur_buf_valid_n = 1'b1;
-
-                                if (desc_fifo[desc_rd_ptr_n][BUF_BITS]) begin
-                                    repeat_phase_n = 1'b0;
-                                end
-
-                                desc_rd_ptr_n = (desc_rd_ptr_n + 1'b1) & DESC_MASK;
-                                desc_count_n  = desc_count_n - 1'b1;
-                            end else begin
-                                underflow_cnt_n = underflow_cnt_n + 10'd1;
-                            end
-                        end
+                        desc_rd_ptr_n = (desc_rd_ptr_n + 1'b1) & DESC_MASK;
+                        desc_count_n  = desc_count_n - 1'b1;
                     end else begin
-                        // not safe-zone: normal pop
-                        if (desc_count_n != 0) begin
-                            if (cur_buf_valid_n) rel_accum_n = rel_accum_n | onehot8(cur_buf_idx_r_n);
-
-                            cur_buf_idx_r_n = desc_fifo[desc_rd_ptr_n][BUF_BITS-1:0];
-                            cur_buf_valid_n = 1'b1;
-
-                            if (desc_fifo[desc_rd_ptr_n][BUF_BITS]) begin
-                                repeat_phase_n = 1'b0;
-                            end
-
-                            desc_rd_ptr_n = (desc_rd_ptr_n + 1'b1) & DESC_MASK;
-                            desc_count_n  = desc_count_n - 1'b1;
-                        end else begin
-                            underflow_cnt_n = underflow_cnt_n + 10'd1;
-                        end
+                        underflow_cnt_n = underflow_cnt_n + 10'd1;
                     end
                 end
 
                 repeat_phase_n = ~repeat_phase_n;
+
+                // min/max update
+                if (desc_count_n < desc_min_n) desc_min_n = desc_count_n;
+                if (desc_count_n > desc_max_n) desc_max_n = desc_count_n;
+            end
+
+            if (line_start_any && (v_cnt >= V_ACTIVE)) begin
+                if ((desc_count_n != 0) && (do_drop_n || (desc_count_n > HIGH_WM))) begin
+                    rel_accum_n   = rel_accum_n | onehot8(desc_fifo[desc_rd_ptr_n][DESC_BUF_MSB:DESC_BUF_LSB]);
+                    desc_rd_ptr_n = (desc_rd_ptr_n + 1'b1) & DESC_MASK;
+                    desc_count_n  = desc_count_n - 1'b1;
+                    do_drop_n     = 1'b0;
+                    if (drop_used_n != 3'd7) drop_used_n = drop_used_n + 3'd1;
+                end else if (desc_count_n < LOW_WM) begin
+                    do_dup_n = 1'b0;
+                    if (dup_used_n != 3'd7) dup_used_n = dup_used_n + 3'd1;
+                end
 
                 // min/max update
                 if (desc_count_n < desc_min_n) desc_min_n = desc_count_n;
