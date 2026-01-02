@@ -367,6 +367,8 @@ module hdmi_480p_core_dbg (
     localparam integer LOW_WM     = 4;
     localparam integer SAFE_START = V_ACTIVE - 24;
 
+    wire safe_for_correction = (v_cnt >= SAFE_START);
+
     reg do_drop, do_dup;
     reg do_drop_n, do_dup_n;
 
@@ -532,7 +534,7 @@ module hdmi_480p_core_dbg (
             end
 
             // Drift correction: only adjust descriptor depth during HDMI VBLANK
-            if (line_start_any && vblank) begin
+            if (line_start_any && vblank && safe_for_correction) begin
                 if ((desc_count_n != 0) && (do_drop_n || (desc_count_n > HIGH_WM))) begin
                     rel_accum_n   = rel_accum_n | onehot8(desc_fifo[desc_rd_ptr_n][DESC_BUF_MSB:DESC_BUF_LSB]);
                     rel_accum_n   = rel_accum_n | onehot8(desc_fifo[desc_rd_ptr_n][BUF_BITS-1:0]);
