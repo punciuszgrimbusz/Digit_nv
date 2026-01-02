@@ -68,9 +68,14 @@ module hdmi_480p_core (
     output reg  [15:0] dbg_corr_pending_flags_cam = 16'd0,
 
     // --- core cam-domain counterek ---
-    output reg  [15:0] dbg_cam_fieldtog_cnt    = 16'd0,
-    output reg  [15:0] dbg_cam_marker_inj_cnt  = 16'd0,
-    output reg  [15:0] dbg_cam_desc_sent_cnt   = 16'd0,
+    output reg  [15:0] dbg_cam_fieldtog_cnt        = 16'd0,
+    output reg  [15:0] dbg_cam_marker_inj_cnt      = 16'd0,
+    output reg  [15:0] dbg_cam_marker_drop_or_defer_cnt = 16'd0,
+    output reg  [15:0] dbg_cam_desc_sent_cnt       = 16'd0,
+
+    output reg  [15:0] dbg_pop_lines_cnt_cam       = 16'd0,
+    output reg  [15:0] dbg_hold_lines_cnt_cam      = 16'd0,
+    output reg  [15:0] dbg_hold_stuck_abort_cnt_cam= 16'd0,
 
     // --- NEW: CAM oldali descriptor queue töltöttség (pagerhez/loghoz) ---
     output reg  [5:0]  dbg_cam_descq_cnt_cam   = 6'd0,
@@ -254,6 +259,7 @@ module hdmi_480p_core (
 
     reg frame_flag_next_line;
     reg cur_line_is_frame_start_cam;
+    reg pending_marker;
 
     reg drop_this_line;
 
@@ -325,6 +331,7 @@ module hdmi_480p_core (
             cam_frame_toggle_d          <= 1'b0;
             frame_flag_next_line        <= 1'b0;
             cur_line_is_frame_start_cam <= 1'b0;
+            pending_marker              <= 1'b0;
             drop_this_line              <= 1'b0;
 
             line_in_field               <= 10'd0;
@@ -338,6 +345,7 @@ module hdmi_480p_core (
 
             dbg_cam_fieldtog_cnt        <= 16'd0;
             dbg_cam_marker_inj_cnt      <= 16'd0;
+            dbg_cam_marker_drop_or_defer_cnt <= 16'd0;
             dbg_cam_desc_sent_cnt       <= 16'd0;
 
             dbg_free_cnt_cam            <= 4'd0;
@@ -369,6 +377,7 @@ module hdmi_480p_core (
 
             if (frame_edge) begin
                 frame_flag_next_line <= 1'b1;
+                pending_marker       <= 1'b1;
                 dbg_cam_fieldtog_cnt <= dbg_cam_fieldtog_cnt + 16'd1;
 
                 in_frame_id <= in_frame_id + {{(CAM_DESC_FRAME_BITS-1){1'b0}}, 1'b1};
@@ -387,7 +396,7 @@ module hdmi_480p_core (
 
                 wr_addr <= 10'd0;
 
-                cur_line_is_frame_start_cam <= frame_flag_next_line | frame_edge;
+                cur_line_is_frame_start_cam <= frame_flag_next_line | frame_edge | pending_marker;
                 frame_flag_next_line        <= 1'b0;
 
                 dbg_free_cnt_cam <= free_cnt_eff4;
@@ -417,6 +426,7 @@ module hdmi_480p_core (
             // ==================================================
             pop_desc = desc_send_cam;
             push_req = line_end && !drop_this_line;
+            can_push = 1'b0;
 
             // 1) POP előbb (slot felszabadul full esetben)
             if (pop_desc) begin
@@ -429,17 +439,23 @@ module hdmi_480p_core (
                 if (push_req) begin
                     can_push = (cam_desc_count_calc < CAM_DESC_DEPTH);
                     if (can_push) begin
-                        cam_desc_fifo[cam_desc_wr_ptr_calc] <= {cur_line_is_frame_start_cam, in_frame_id, cur_line_y, clean_buf_id(wr_buf_idx)};
+                        cam_desc_fifo[cam_desc_wr_ptr_calc] <= {pending_marker | cur_line_is_frame_start_cam, in_frame_id, cur_line_y, clean_buf_id(wr_buf_idx)};
                         cam_desc_wr_ptr_calc                = (cam_desc_wr_ptr_calc + 1'b1) & CAM_DESC_MASK;
                         cam_desc_count_calc                 = cam_desc_count_calc + 1'b1;
 
                         dbg_cam_desc_sent_cnt <= dbg_cam_desc_sent_cnt + 16'd1;
-                        if (cur_line_is_frame_start_cam)
+                        if (pending_marker || cur_line_is_frame_start_cam) begin
+                            pending_marker <= 1'b0;
                             dbg_cam_marker_inj_cnt <= dbg_cam_marker_inj_cnt + 16'd1;
+                        end
                     end else begin
                         // nincs hely -> buffer vissza a poolba
                         free_map_calc = free_map_calc | onehot16(clean_buf_id(wr_buf_idx));
                     end
+                end
+                if (pending_marker && (!push_req || !can_push)) begin
+                    if (dbg_cam_marker_drop_or_defer_cnt != 16'hFFFF)
+                        dbg_cam_marker_drop_or_defer_cnt <= dbg_cam_marker_drop_or_defer_cnt + 16'd1;
                 end
                 drop_this_line <= 1'b0;
             end
@@ -581,6 +597,11 @@ module hdmi_480p_core (
     reg [15:0] hard_resync_cnt,     hard_resync_cnt_n;
     reg [15:0] corr_skip_marker_cnt, corr_skip_marker_cnt_n;
 
+    reg [15:0] pop_lines_cnt, pop_lines_cnt_n;
+    reg [15:0] hold_lines_cnt, hold_lines_cnt_n;
+    reg [15:0] hold_stuck_abort_cnt, hold_stuck_abort_cnt_n;
+    localparam integer HOLD_STUCK_THRESH = 4;
+
     reg [15:0] desc_count_now, desc_count_now_n;
     reg [15:0] desc_err_now,   desc_err_now_n;
     reg [15:0] marker_distance, marker_distance_n;
@@ -658,7 +679,7 @@ module hdmi_480p_core (
     reg                           need_frame_resync,     need_frame_resync_n;
     reg                           freeze_frame,          freeze_frame_n;
 
-    localparam integer DBG_BUS_W = 440;
+    localparam integer DBG_BUS_W = 488;
 
     reg [DBG_BUS_W-1:0] dbg_bus_pix = {DBG_BUS_W{1'b0}};
     reg                 dbg_tog_pix = 1'b0;
@@ -667,6 +688,8 @@ module hdmi_480p_core (
     reg [BUF_BITS-1:0]           drop_buf_idx;
     reg                          drop_has_marker;
     reg                          drop_owned;
+    reg                          line_popped;
+    reg                          hold_line_event;
 
     always @(posedge pix_clk or negedge resetn) begin
         if (!resetn) begin
@@ -726,6 +749,10 @@ module hdmi_480p_core (
             hard_resync_cnt      <= 16'd0;
             corr_skip_marker_cnt <= 16'd0;
 
+            pop_lines_cnt        <= 16'd0;
+            hold_lines_cnt       <= 16'd0;
+            hold_stuck_abort_cnt <= 16'd0;
+
             desc_count_now       <= 16'd0;
             desc_err_now         <= 16'd0;
             marker_distance      <= 16'd0;
@@ -760,6 +787,8 @@ module hdmi_480p_core (
             drop_buf_idx    <= {BUF_BITS{1'b0}};
             drop_has_marker <= 1'b0;
             drop_owned      <= 1'b0;
+            line_popped     <= 1'b0;
+            hold_line_event <= 1'b0;
 
         end else begin
             // defaults
@@ -793,6 +822,8 @@ module hdmi_480p_core (
             rel_pend_data_n  = rel_pend_data;
 
             do_pop_desc      = 1'b0;
+            line_popped      = 1'b0;
+            hold_line_event  = 1'b0;
 
             do_drop_n        = do_drop;
 
@@ -819,6 +850,10 @@ module hdmi_480p_core (
             soft_dup_lines_cnt_n   = soft_dup_lines_cnt;
             hard_resync_cnt_n      = hard_resync_cnt;
             corr_skip_marker_cnt_n = corr_skip_marker_cnt;
+
+            pop_lines_cnt_n        = pop_lines_cnt;
+            hold_lines_cnt_n       = hold_lines_cnt;
+            hold_stuck_abort_cnt_n = hold_stuck_abort_cnt;
 
             desc_count_now_n     = desc_count_now;
             desc_err_now_n       = desc_err_now;
@@ -896,6 +931,9 @@ module hdmi_480p_core (
                 uf_streak_n   = 4'd0;
 
                 freeze_frame_n = 1'b0;
+
+                pop_lines_cnt_n  = 16'd0;
+                hold_lines_cnt_n = 16'd0;
 
                 marker_found_r_n      = 1'b0;
                 marker_off_r_n        = 5'd0;
@@ -1053,6 +1091,8 @@ module hdmi_480p_core (
 
             if (de && !de_d && (v_cnt < V_ACTIVE) && !freeze_frame_n) begin
                 force_repeat_line = 1'b0;
+                line_popped      = 1'b0;
+                hold_line_event  = 1'b0;
 
                 if (soft_dup_pending_n && cur_buf_valid_n) begin
                     force_repeat_line            = 1'b1;
@@ -1075,6 +1115,7 @@ module hdmi_480p_core (
                 if (!force_repeat_line) begin
                     if (!repeat_phase_n) begin
                         if (desc_count_n != 0) begin
+                            line_popped = 1'b1;
                             uf_streak_n = 4'd0;
 
                             if (desc_fifo[desc_rd_ptr_n][DESC_FRAME_MSB:DESC_FRAME_LSB] != out_frame_id_expected_n) begin
@@ -1109,6 +1150,7 @@ module hdmi_480p_core (
                             end
                         end else begin
                             // UNDERFLOW
+                            hold_line_event = 1'b1;
                             underflow_cnt_n = underflow_cnt_n + 10'd1;
                             if (uf_streak_n != 4'hF) uf_streak_n = uf_streak_n + 4'd1;
 
@@ -1126,13 +1168,35 @@ module hdmi_480p_core (
                                 cur_buf_valid_n = 1'b0;
                             end
                         end
+                    end else begin
+                        hold_line_event = 1'b1;
                     end
+                end else begin
+                    hold_line_event = 1'b1;
                 end
 
                 if (force_repeat_line)
                     repeat_phase_n = 1'b1;
                 else
                     repeat_phase_n = ~repeat_phase_n;
+
+                if (line_popped) begin
+                    if (pop_lines_cnt_n != 16'hFFFF)
+                        pop_lines_cnt_n = pop_lines_cnt_n + 16'd1;
+                end else if (hold_line_event) begin
+                    if (hold_lines_cnt_n != 16'hFFFF)
+                        hold_lines_cnt_n = hold_lines_cnt_n + 16'd1;
+                end
+
+                if (hold_lines_cnt_n > (pop_lines_cnt_n + HOLD_STUCK_THRESH)) begin
+                    repeat_phase_n       = 1'b0;
+                    soft_dup_pending_n   = 1'b0;
+                    freeze_frame_n       = 1'b0;
+                    uf_streak_n          = 4'd0;
+                    hold_lines_cnt_n     = pop_lines_cnt_n;
+                    if (hold_stuck_abort_cnt_n != 16'hFFFF)
+                        hold_stuck_abort_cnt_n = hold_stuck_abort_cnt_n + 16'd1;
+                end
 
                 if (desc_count_n < desc_min_n) desc_min_n = desc_count_n;
                 if (desc_count_n > desc_max_n) desc_max_n = desc_count_n;
@@ -1215,6 +1279,9 @@ module hdmi_480p_core (
 
             if (frame_start) begin
                 dbg_bus_pix <= {
+                    pop_lines_cnt_n,            // [487:472]
+                    hold_lines_cnt_n,           // [471:456]
+                    hold_stuck_abort_cnt_n,     // [455:440]
                     desc_count_now_n,           // [439:424]
                     desc_err_now_n,             // [423:408]
                     marker_distance_n,          // [407:392]
@@ -1340,6 +1407,10 @@ module hdmi_480p_core (
             last_resync_reason    <= last_resync_reason_n;
             corr_pending_flags    <= corr_pending_flags_n;
 
+            pop_lines_cnt        <= pop_lines_cnt_n;
+            hold_lines_cnt       <= hold_lines_cnt_n;
+            hold_stuck_abort_cnt <= hold_stuck_abort_cnt_n;
+
             soft_drop_pending     <= soft_drop_pending_n;
 
             dbg_last_drop_v   <= dbg_last_drop_v_n;
@@ -1401,12 +1472,20 @@ module hdmi_480p_core (
             dbg_last_soft_corr_v_cam    <= 16'd0;
             dbg_corr_skip_marker_cnt_cam<= 16'd0;
 
+            dbg_pop_lines_cnt_cam        <= 16'd0;
+            dbg_hold_lines_cnt_cam       <= 16'd0;
+            dbg_hold_stuck_abort_cnt_cam <= 16'd0;
+
         end else begin
             dbg_tsync     <= {dbg_tsync[1:0], dbg_tog_pix};
             dbg_bus_sync1 <= dbg_bus_pix;
             dbg_bus_sync2 <= dbg_bus_sync1;
 
             if (dbg_new) begin
+                dbg_pop_lines_cnt_cam        <= dbg_bus_sync2[487:472];
+                dbg_hold_lines_cnt_cam       <= dbg_bus_sync2[471:456];
+                dbg_hold_stuck_abort_cnt_cam <= dbg_bus_sync2[455:440];
+
                 dbg_soft_drop_lines_cnt_cam <= dbg_bus_sync2[303:288];
                 dbg_soft_dup_lines_cnt_cam  <= dbg_bus_sync2[287:272];
                 dbg_hard_resync_cnt_cam     <= dbg_bus_sync2[271:256];

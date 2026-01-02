@@ -150,6 +150,11 @@ module top(
     wire [15:0] dbg_last_resync_reason_cam;
     wire [15:0] dbg_corr_pending_flags_cam;
 
+    wire [15:0] dbg_pop_lines_cnt_cam;
+    wire [15:0] dbg_hold_lines_cnt_cam;
+    wire [15:0] dbg_hold_stuck_abort_cnt_cam;
+    wire [15:0] dbg_cam_marker_drop_or_defer_cnt_cam;
+
     wire [5:0] dbg_cam_descq_cnt_cam;
 
     wire        hdmi_vsync_toggle;
@@ -197,7 +202,12 @@ module top(
 
         .dbg_cam_fieldtog_cnt    (dbg_cam_fieldtog_cnt_cam),
         .dbg_cam_marker_inj_cnt  (dbg_cam_marker_inj_cnt_cam),
+        .dbg_cam_marker_drop_or_defer_cnt(dbg_cam_marker_drop_or_defer_cnt_cam),
         .dbg_cam_desc_sent_cnt   (dbg_cam_desc_sent_cnt_cam),
+
+        .dbg_pop_lines_cnt_cam       (dbg_pop_lines_cnt_cam),
+        .dbg_hold_lines_cnt_cam      (dbg_hold_lines_cnt_cam),
+        .dbg_hold_stuck_abort_cnt_cam(dbg_hold_stuck_abort_cnt_cam),
 
         .dbg_fault_sticky_cam       (dbg_fault_sticky_cam),
         .dbg_own_map_cam            (dbg_own_map_cam),
@@ -303,7 +313,7 @@ module top(
     i2c_diag_pager #(
         .CLK_HZ  (27000000),
         .PERIODS (3),
-        .PAGES   (55)  // 0..54
+        .PAGES   (59)  // 0..58
     ) u_pager (
         .clk    (cam1_pclk),
         .resetn (cam_resetn),
@@ -337,6 +347,7 @@ module top(
         .dbg_cam_fieldtog_cnt   (dbg_cam_fieldtog_cnt_cam),
         .dbg_cam_marker_inj_cnt (dbg_cam_marker_inj_cnt_cam),
         .dbg_cam_desc_sent_cnt  (dbg_cam_desc_sent_cnt_cam),
+        .dbg_cam_marker_drop_or_defer_cnt (dbg_cam_marker_drop_or_defer_cnt_cam),
 
         .dbg_fault_sticky        (dbg_fault_sticky_cam),
         .dbg_own_map             (dbg_own_map_cam),
@@ -363,6 +374,10 @@ module top(
         .dbg_marker_distance     (dbg_marker_distance_cam),
         .dbg_last_resync_reason  (dbg_last_resync_reason_cam),
         .dbg_corr_pending_flags  (dbg_corr_pending_flags_cam),
+
+        .dbg_pop_lines_cnt       (dbg_pop_lines_cnt_cam),
+        .dbg_hold_lines_cnt      (dbg_hold_lines_cnt_cam),
+        .dbg_hold_stuck_abort_cnt(dbg_hold_stuck_abort_cnt_cam),
 
         .dbg_last_drop_v         (dbg_last_drop_v_cam),
         .dbg_last_dup_v          (dbg_last_dup_v_cam),
