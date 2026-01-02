@@ -302,7 +302,7 @@ module top(
 
     i2c_diag_pager #(
         .CLK_HZ  (27000000),
-        .PERIODS (5),
+        .PERIODS (3),
         .PAGES   (55)  // 0..54
     ) u_pager (
         .clk    (cam1_pclk),

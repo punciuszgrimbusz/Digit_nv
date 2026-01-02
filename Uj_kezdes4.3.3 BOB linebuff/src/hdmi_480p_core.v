@@ -547,14 +547,15 @@ module hdmi_480p_core (
     localparam integer LOW_WM     = (NUM_BUFS - 8);  // 8 : duplicate threshold
     localparam integer SAFE_START = V_ACTIVE - 128;
 
-    localparam integer SOFT_TARGET = (DESC_DEPTH/2);
-    localparam integer SOFT_HI     = 2;
-    localparam integer SOFT_LO     = 2;
+    localparam integer SOFT_TARGET = (DESC_DEPTH/2 + 2);
+    localparam integer SOFT_HI     = 3;
+    localparam integer SOFT_LO     = 3;
     localparam signed  [6:0] SOFT_TARGET_S = SOFT_TARGET;
     localparam signed  [3:0] SOFT_HI_S     = SOFT_HI;
     localparam signed  [3:0] SOFT_LO_S     = SOFT_LO;
 
     wire safe_for_correction = (v_cnt >= SAFE_START);
+    wire marker_locked = (marker_distance != 16'hFFFF);
 
     reg do_drop, do_drop_n;
 
@@ -603,12 +604,14 @@ module hdmi_480p_core (
     reg [4:0] marker_off_r, marker_off_r_n;
     reg [7:0] dbg_marker_off_snapshot, dbg_marker_off_snapshot_n;
 
-    localparam integer MAX_ALIGN_POP = 16;
-    reg [3:0]  align_budget, align_budget_n;
+    localparam integer MAX_ALIGN_POP = 31;
+    reg [4:0]  align_budget, align_budget_n;
     reg        align_active, align_active_n;
     reg [15:0] dbg_align_pop_total, dbg_align_pop_total_n;
     reg [15:0] dbg_align_hit_cnt, dbg_align_hit_cnt_n;
     reg [15:0] dbg_marker_miss_cnt, dbg_marker_miss_cnt_n;
+    reg [3:0]  marker_miss_streak, marker_miss_streak_n;
+    localparam integer MARKER_MISS_THRESH = 4;
     integer mi;
     reg [DESC_BITS-1:0] midx;
     reg force_repeat_line;
@@ -685,6 +688,7 @@ module hdmi_480p_core (
             dbg_align_pop_total <= 16'd0;
             dbg_align_hit_cnt   <= 16'd0;
             dbg_marker_miss_cnt <= 16'd0;
+            marker_miss_streak  <= 4'd0;
             dbg_marker_off_snapshot <= 8'd0;
 
             marker_found_r <= 1'b0;
@@ -776,6 +780,7 @@ module hdmi_480p_core (
             dbg_align_pop_total_n = dbg_align_pop_total;
             dbg_align_hit_cnt_n   = dbg_align_hit_cnt;
             dbg_marker_miss_cnt_n = dbg_marker_miss_cnt;
+            marker_miss_streak_n  = marker_miss_streak;
             dbg_marker_off_snapshot_n = dbg_marker_off_snapshot;
             marker_found_r_n = marker_found_r;
             marker_off_r_n   = marker_off_r;
@@ -839,9 +844,6 @@ module hdmi_480p_core (
             need_frame_resync_n      = need_frame_resync;
             freeze_frame_n           = freeze_frame;
 
-            marker_found_r_n = marker_found_pix;
-            marker_off_r_n   = marker_off_pix;
-
             if (!vsync && vsync_d && vblank) begin
                 do_drop_n      = 1'b0;
                 repeat_phase_n = 1'b0;
@@ -895,34 +897,65 @@ module hdmi_480p_core (
 
                 freeze_frame_n = 1'b0;
 
-                if (desc_count_n != 0)
-                    out_frame_id_expected_n = desc_fifo[desc_rd_ptr_n][DESC_FRAME_MSB:DESC_FRAME_LSB];
+                marker_found_r_n      = 1'b0;
+                marker_off_r_n        = 5'd0;
+                align_active_n        = 1'b0;
+                align_budget_n        = 5'd0;
+                marker_distance_n     = 16'hFFFF;
 
-                if (have_any_line_n)
-                    allow_hard_resync_n = 1'b0;
-            end
+                if (desc_count_n != 0) begin
+                    if (desc_fifo[desc_rd_ptr_n][DESC_MARKER_BIT]) begin
+                        marker_found_r_n  = 1'b1;
+                        marker_distance_n = 16'd0;
+                    end else if (marker_found_pix) begin
+                        marker_found_r_n  = 1'b1;
+                        marker_off_r_n    = marker_off_pix;
+                        marker_distance_n = {11'd0, marker_off_pix};
 
-            if (vblank_line_start && (v_cnt == V_ACTIVE)) begin
-                align_budget_n = MAX_ALIGN_POP[3:0];
-                align_active_n = 1'b0;
-
-                if (marker_found_r_n) begin
-                    dbg_marker_off_snapshot_n = {3'd0, marker_off_r_n};
-
-                    if (marker_off_r_n != 5'd0) begin
-                        align_active_n = 1'b1;
-                        if (dbg_align_hit_cnt_n != 16'hFFFF)
-                            dbg_align_hit_cnt_n = dbg_align_hit_cnt_n + 16'd1;
+                        if (marker_off_pix != 5'd0) begin
+                            align_active_n = 1'b1;
+                            align_budget_n = (marker_off_pix > MAX_ALIGN_POP[4:0]) ? MAX_ALIGN_POP[4:0] : marker_off_pix;
+                            if (dbg_align_hit_cnt_n != 16'hFFFF)
+                                dbg_align_hit_cnt_n = dbg_align_hit_cnt_n + 16'd1;
+                        end
                     end
-                end else begin
+
+                    out_frame_id_expected_n = desc_fifo[desc_rd_ptr_n][DESC_FRAME_MSB:DESC_FRAME_LSB];
+                end
+
+                if (!marker_found_r_n) begin
                     if (dbg_marker_miss_cnt_n != 16'hFFFF)
                         dbg_marker_miss_cnt_n = dbg_marker_miss_cnt_n + 16'd1;
+                    if (marker_miss_streak_n != 4'hF)
+                        marker_miss_streak_n = marker_miss_streak_n + 4'd1;
+                end else begin
+                    marker_miss_streak_n = 4'd0;
+                end
+
+                if (!marker_found_r_n && (marker_miss_streak_n >= (MARKER_MISS_THRESH-1))) begin
+                    align_active_n    = 1'b0;
+                    align_budget_n    = 5'd0;
+                    desc_rd_ptr_n     = desc_wr_ptr_n;
+                    desc_count_n      = 6'd0;
+                    rel_accum_n       = rel_accum_n | pix_own_map_n;
+                    pix_own_map_n     = 16'h0000;
+                    cur_buf_valid_n   = 1'b0;
+
+                    seek_armed_n         = 1'b1;
+                    need_frame_resync_n  = 1'b1;
+                    freeze_frame_n       = 1'b1;
+                    resync_used_n        = 1'b1;
+                    last_resync_reason_n = 16'd1;
+
+                    if (hard_resync_cnt_n != 16'hFFFF)
+                        hard_resync_cnt_n = hard_resync_cnt_n + 16'd1;
+
+                    marker_miss_streak_n = 4'd0;
                 end
             end
 
-            if (!vblank) begin
-                align_active_n = 1'b0;
-                align_budget_n = 4'd0;
+            if (vblank_line_start && (v_cnt == V_ACTIVE)) begin
+                dbg_marker_off_snapshot_n = marker_found_r_n ? {3'd0, marker_off_r_n} : 8'd0;
             end
 
             if (vblank && safe_for_correction && seek_armed_n && !seek_active_n) begin
@@ -965,7 +998,6 @@ module hdmi_480p_core (
 
                             if (hard_resync_cnt_n != 16'hFFFF)
                                 hard_resync_cnt_n = hard_resync_cnt_n + 16'd1;
-                            allow_hard_resync_n = 1'b0;
 
                             need_frame_resync_n = 1'b0;
                         end else begin
@@ -981,8 +1013,8 @@ module hdmi_480p_core (
                 end
             end
 
-            if (align_active_n && vblank && safe_for_correction) begin
-                if (marker_found_r_n && (marker_off_r_n != 5'd0) && (align_budget_n != 4'd0) && (desc_count_n != 0)) begin
+            if (align_active_n && safe_for_correction) begin
+                if (marker_found_r_n && (marker_off_r_n != 5'd0) && (align_budget_n != 5'd0) && (desc_count_n != 0)) begin
                     drop_desc    = desc_fifo[desc_rd_ptr_n];
                     drop_buf_idx = clean_buf_id(drop_desc[DESC_BUF_MSB:DESC_BUF_LSB]);
                     drop_owned   = pix_own_map_n[drop_buf_idx];
@@ -1001,7 +1033,7 @@ module hdmi_480p_core (
 
                         do_pop_desc   = 1'b1;
 
-                        align_budget_n = align_budget_n - 4'd1;
+                        align_budget_n = align_budget_n - 5'd1;
 
                         if (dbg_align_pop_total_n != 16'hFFFF)
                             dbg_align_pop_total_n = dbg_align_pop_total_n + 16'd1;
@@ -1047,12 +1079,8 @@ module hdmi_480p_core (
 
                             if (desc_fifo[desc_rd_ptr_n][DESC_FRAME_MSB:DESC_FRAME_LSB] != out_frame_id_expected_n) begin
                                 last_resync_reason_n = 16'd2;
-                                if (allow_hard_resync_n) begin
-                                    freeze_frame_n      = 1'b1;
-                                    need_frame_resync_n = 1'b1;
-                                end else begin
-                                    out_frame_id_expected_n = desc_fifo[desc_rd_ptr_n][DESC_FRAME_MSB:DESC_FRAME_LSB];
-                                end
+                                freeze_frame_n      = 1'b1;
+                                need_frame_resync_n = 1'b1;
                             end else begin
                                 if (cur_buf_valid_n) begin
                                     rel_accum_n = rel_accum_n | onehot16(cur_buf_idx_r_n);
@@ -1118,13 +1146,13 @@ module hdmi_480p_core (
             if (line_start_any && vblank) begin
                 soft_drop_pending_n = 1'b0;
 
-                if (safe_for_correction && !soft_corrected_this_frame_n) begin
+                if (safe_for_correction && marker_locked && !soft_corrected_this_frame_n) begin
                     drop_desc       = desc_fifo[desc_rd_ptr_n];
                     drop_buf_idx    = clean_buf_id(drop_desc[DESC_BUF_MSB:DESC_BUF_LSB]);
                     drop_has_marker = drop_desc[DESC_MARKER_BIT];
                     drop_owned      = pix_own_map_n[drop_buf_idx];
 
-                    if ($signed({1'b0, desc_count_n}) - SOFT_TARGET_S > SOFT_HI_S) begin
+                    if ($signed({1'b0, desc_count_n}) - SOFT_TARGET_S >= SOFT_HI_S) begin
                         soft_drop_pending_n = 1'b1;
                         if (desc_count_n != 0) begin
                             if (drop_has_marker) begin
@@ -1158,7 +1186,7 @@ module hdmi_480p_core (
                                 soft_drop_pending_n  = 1'b0;
                             end
                         end
-                    end else if ($signed({1'b0, desc_count_n}) - SOFT_TARGET_S < -SOFT_LO_S) begin
+                    end else if ($signed({1'b0, desc_count_n}) - SOFT_TARGET_S <= -SOFT_LO_S) begin
                         if (cur_buf_valid_n) begin
                             soft_corrected_this_frame_n = 1'b1;
                             soft_dup_pending_n          = 1'b1;
@@ -1171,8 +1199,8 @@ module hdmi_480p_core (
             end
 
             desc_count_now_n  = {10'd0, desc_count_n};
-            desc_err_now_n    = $signed({10'd0, desc_count_n}) - 16'sd16;
-            marker_distance_n = marker_found_pix ? {11'd0, marker_off_pix} : 16'hFFFF;
+            desc_err_now_n    = $signed({10'd0, desc_count_n}) - 16'sd18;
+            marker_distance_n = marker_distance_n;
             corr_pending_flags_n = {12'd0, soft_corrected_this_frame_n, (align_active_n || (marker_found_r_n && (marker_off_r_n != 5'd0))), soft_drop_pending_n, soft_dup_pending_n};
 
             if (!rel_pend_n && (rel_accum_n != 16'h0000)) begin

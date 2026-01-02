@@ -60,7 +60,7 @@
 */
 module i2c_diag_pager #(
     parameter integer CLK_HZ  = 27000000,
-    parameter integer PERIODS = 5,
+    parameter integer PERIODS = 3,
     parameter integer PAGES   = 55   // 0..54
 )(
     input  wire       clk,
