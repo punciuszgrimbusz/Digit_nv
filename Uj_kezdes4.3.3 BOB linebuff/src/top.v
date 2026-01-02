@@ -220,7 +220,6 @@ module top(
         .hdmi_frame_repeat_cnt_cam (hdmi_frame_repeat_cnt_cam),
         .fill_lines_cnt_cam        (fill_lines_cnt_cam),
         .blocks_left_snapshot_cam  (blocks_left_snapshot_cam),
-        .cam_blocks_per_field_last (cam_blocks_per_field_last),
         .marker_at_head_cam        (marker_at_head_cam),
         .field_start_ok_cnt_cam    (field_start_ok_cnt_cam),
 
