@@ -37,10 +37,10 @@
 33 dbg_cam_descq_cnt_cam – CAM→PIX descriptor queue töltöttség (0..31/32)
 34 last_drop_v – utolsó drop esemény v_cnt értéke
 35 last_dup_v – utolsó dup esemény v_cnt értéke
-36 last_resync_v – utolsó resync esemény v_cnt értéke
-37 last_drop_h – utolsó drop esemény h_cnt értéke
-38 last_dup_h – utolsó dup esemény h_cnt értéke
-39 last_resync_h – utolsó resync esemény h_cnt értéke
+36 in_sof_cnt16 – input start-of-field számláló LSB16
+37 out_vsync_cnt16 – HDMI vsync számláló LSB16
+38 sof_delta16 = in_sof_cnt16 - out_vsync_cnt16 (mod 16 bit)
+39 lock_status16 – bitmező (bit0=marker_found/locked, bit1=lock_lost_pulse_latched, bit2=resync_event_latched, bit3=frame_miss_event_latched)
 */
 module i2c_diag_pager #(
     parameter integer CLK_HZ  = 27000000,
@@ -92,10 +92,10 @@ module i2c_diag_pager #(
 
     input  wire [15:0] dbg_last_drop_v,        // page34
     input  wire [15:0] dbg_last_dup_v,         // page35
-    input  wire [15:0] dbg_last_resync_v,      // page36
-    input  wire [15:0] dbg_last_drop_h,        // page37
-    input  wire [15:0] dbg_last_dup_h,         // page38
-    input  wire [15:0] dbg_last_resync_h,      // page39
+    input  wire [15:0] in_sof_cnt16,           // page36
+    input  wire [15:0] out_vsync_cnt16,        // page37
+    input  wire [15:0] sof_delta16,            // page38
+    input  wire [15:0] lock_status16,          // page39
 
     output reg         new_sample = 1'b0,
     output reg [7:0]   out_page   = 8'd0,
@@ -205,10 +205,10 @@ module i2c_diag_pager #(
 
             8'd34: value_mux = dbg_last_drop_v;
             8'd35: value_mux = dbg_last_dup_v;
-            8'd36: value_mux = dbg_last_resync_v;
-            8'd37: value_mux = dbg_last_drop_h;
-            8'd38: value_mux = dbg_last_dup_h;
-            8'd39: value_mux = dbg_last_resync_h;
+            8'd36: value_mux = in_sof_cnt16;
+            8'd37: value_mux = out_vsync_cnt16;
+            8'd38: value_mux = sof_delta16;
+            8'd39: value_mux = lock_status16;
 
             default: value_mux = 16'h0000;
         endcase

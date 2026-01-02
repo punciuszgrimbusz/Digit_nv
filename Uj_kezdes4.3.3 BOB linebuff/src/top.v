@@ -135,6 +135,21 @@ module top(
 
     wire [5:0] dbg_cam_descq_cnt_cam;
 
+    wire        hdmi_vsync_toggle;
+
+    reg  [15:0] in_sof_cnt16      = 16'd0;
+    reg  [15:0] out_vsync_cnt16   = 16'd0;
+    wire [15:0] sof_delta16       = in_sof_cnt16 - out_vsync_cnt16;
+
+    reg         lock_lost_latched      = 1'b0;
+    reg         resync_event_latched   = 1'b0;
+    reg         frame_miss_event_latched = 1'b0;
+    reg  [2:0]  vsync_tsync             = 3'b000;
+    reg         cam_field_toggle_d      = 1'b0;
+
+    wire        vsync_edge_cam = vsync_tsync[2] ^ vsync_tsync[1];
+    wire [15:0] lock_status16  = {12'd0, frame_miss_event_latched, resync_event_latched, lock_lost_latched, dbg_marker_found_cam};
+
     hdmi_480p_core u_hdmi (
         .pix_clk          (pix_clk),
         .pix_clk_5x       (clk_p5),
@@ -182,6 +197,8 @@ module top(
 
         .dbg_cam_descq_cnt_cam      (dbg_cam_descq_cnt_cam),
 
+        .vsync_toggle_pix    (hdmi_vsync_toggle),
+
         .tmds_clk_p        (tmds_clk_p),
         .tmds_clk_n        (tmds_clk_n),
         .tmds_d_p          (tmds_d_p),
@@ -207,6 +224,41 @@ module top(
 
     wire [15:0] cam_field_period_lo = cam_field_period_pix[15:0];
     wire [15:0] cam_field_period_hi = cam_field_period_pix[31:16];
+
+    // VSYNC/field diagnostics
+    always @(posedge cam1_pclk or negedge cam_resetn) begin
+        if (!cam_resetn) begin
+            vsync_tsync             <= 3'b000;
+            cam_field_toggle_d      <= 1'b0;
+            in_sof_cnt16            <= 16'd0;
+            out_vsync_cnt16         <= 16'd0;
+            lock_lost_latched       <= 1'b0;
+            resync_event_latched    <= 1'b0;
+            frame_miss_event_latched<= 1'b0;
+        end else begin
+            vsync_tsync        <= {vsync_tsync[1:0], hdmi_vsync_toggle};
+            cam_field_toggle_d <= cam_field_toggle;
+
+            if (cam_field_toggle != cam_field_toggle_d)
+                in_sof_cnt16 <= in_sof_cnt16 + 16'd1;
+
+            if (vsync_edge_cam) begin
+                out_vsync_cnt16          <= out_vsync_cnt16 + 16'd1;
+                lock_lost_latched        <= 1'b0;
+                resync_event_latched     <= 1'b0;
+                frame_miss_event_latched <= 1'b0;
+            end
+
+            if (!dbg_marker_found_cam)
+                lock_lost_latched <= 1'b1;
+
+            if (dbg_resync_used_cam)
+                resync_event_latched <= 1'b1;
+
+            if (in_sof_cnt16 != out_vsync_cnt16)
+                frame_miss_event_latched <= 1'b1;
+        end
+    end
 
     // Pager -> I2C logger
     wire        log_new;
@@ -263,10 +315,11 @@ module top(
 
         .dbg_last_drop_v         (dbg_last_drop_v_cam),
         .dbg_last_dup_v          (dbg_last_dup_v_cam),
-        .dbg_last_resync_v       (dbg_last_resync_v_cam),
-        .dbg_last_drop_h         (dbg_last_drop_h_cam),
-        .dbg_last_dup_h          (dbg_last_dup_h_cam),
-        .dbg_last_resync_h       (dbg_last_resync_h_cam),
+
+        .in_sof_cnt16            (in_sof_cnt16),
+        .out_vsync_cnt16         (out_vsync_cnt16),
+        .sof_delta16             (sof_delta16),
+        .lock_status16           (lock_status16),
 
         .new_sample (log_new),
         .out_page   (log_page),
