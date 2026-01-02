@@ -140,6 +140,13 @@ module hdmi_480p_core (
         end
     endfunction
 
+    function [BUF_BITS-1:0] clean_buf_id;
+        input [BUF_BITS-1:0] raw;
+        begin
+            clean_buf_id = raw[$clog2(NUM_BUFS)-1:0];
+        end
+    endfunction
+
     // ============================================================
     // CDC #1: PIX -> CAM release mask (16-bit)
     // ============================================================
@@ -403,7 +410,7 @@ module hdmi_480p_core (
                 if (push_req) begin
                     can_push = (cam_desc_count_calc < CAM_DESC_DEPTH);
                     if (can_push) begin
-                        cam_desc_fifo[cam_desc_wr_ptr_calc] <= {cur_line_is_frame_start_cam, in_frame_id, cur_line_y, wr_buf_idx};
+                        cam_desc_fifo[cam_desc_wr_ptr_calc] <= {cur_line_is_frame_start_cam, in_frame_id, cur_line_y, clean_buf_id(wr_buf_idx)};
                         cam_desc_wr_ptr_calc                = (cam_desc_wr_ptr_calc + 1'b1) & CAM_DESC_MASK;
                         cam_desc_count_calc                 = cam_desc_count_calc + 1'b1;
 
@@ -412,7 +419,7 @@ module hdmi_480p_core (
                             dbg_cam_marker_inj_cnt <= dbg_cam_marker_inj_cnt + 16'd1;
                     end else begin
                         // nincs hely -> buffer vissza a poolba
-                        free_map_calc = free_map_calc | onehot16(wr_buf_idx);
+                        free_map_calc = free_map_calc | onehot16(clean_buf_id(wr_buf_idx));
                     end
                 end
                 drop_this_line <= 1'b0;
@@ -583,7 +590,7 @@ module hdmi_480p_core (
     reg [15:0] pix_rel_not_owned_cnt, pix_rel_not_owned_cnt_n;
     reg [7:0]  pix_overflow_rel_lo8,  pix_overflow_rel_lo8_n;
 
-    reg [BUF_BITS-1:0] rx_idx;
+    reg [BUF_BITS-1:0] rx_idx_clean;
     reg                rx_was_owned;
 
     reg [CAM_DESC_FRAME_BITS-1:0] out_frame_id_expected, out_frame_id_expected_n;
@@ -646,7 +653,7 @@ module hdmi_480p_core (
             pix_rel_not_owned_cnt  <= 16'd0;
             pix_overflow_rel_lo8   <= 8'd0;
 
-            rx_idx       <= {BUF_BITS{1'b0}};
+            rx_idx_clean <= {BUF_BITS{1'b0}};
             rx_was_owned <= 1'b0;
 
             uf_streak    <= 4'd0;
@@ -721,15 +728,15 @@ module hdmi_480p_core (
             if (desc_new_pix) begin
                 have_any_line_n = 1'b1;
 
-                rx_idx       = desc_data_pix[DESC_BUF_MSB:DESC_BUF_LSB];
-                rx_was_owned = pix_own_map_n[rx_idx];
+                rx_idx_clean = clean_buf_id(desc_data_pix[DESC_BUF_MSB:DESC_BUF_LSB]);
+                rx_was_owned = pix_own_map_n[rx_idx_clean];
 
                 if (rx_was_owned) begin
                     pix_fault_sticky_n[ST_RX_DUPBUF] = 1'b1;
                     pix_rx_dupbuf_cnt_n              = pix_rx_dupbuf_cnt_n + 16'd1;
                 end
 
-                pix_own_map_n = pix_own_map_n | onehot16(rx_idx);
+                pix_own_map_n = pix_own_map_n | onehot16(rx_idx_clean);
 
                 if (desc_count_n < DESC_DEPTH) begin
                     desc_fifo[desc_wr_ptr_n] = desc_data_pix;
@@ -739,8 +746,8 @@ module hdmi_480p_core (
                     overflow_cnt_n = overflow_cnt_n + 10'd1;
                     pix_fault_sticky_n[ST_DESC_OVERFLOW] = 1'b1;
 
-                    rel_accum_n   = rel_accum_n | onehot16(rx_idx);
-                    pix_own_map_n = pix_own_map_n & ~onehot16(rx_idx);
+                    rel_accum_n   = rel_accum_n | onehot16(rx_idx_clean);
+                    pix_own_map_n = pix_own_map_n & ~onehot16(rx_idx_clean);
 
                     pix_overflow_rel_lo8_n = pix_overflow_rel_lo8_n + 8'd1;
                 end
@@ -777,13 +784,13 @@ module hdmi_480p_core (
 
             if (vblank && safe_for_correction && seek_active_n) begin
                 if ((seek_rem_n != 5'd0) && (desc_count_n != 0)) begin
-                    rel_accum_n = rel_accum_n | onehot16(desc_fifo[desc_rd_ptr_n][DESC_BUF_MSB:DESC_BUF_LSB]);
+                    rel_accum_n = rel_accum_n | onehot16(clean_buf_id(desc_fifo[desc_rd_ptr_n][DESC_BUF_MSB:DESC_BUF_LSB]));
 
-                    if (!pix_own_map_n[desc_fifo[desc_rd_ptr_n][DESC_BUF_MSB:DESC_BUF_LSB]]) begin
+                    if (!pix_own_map_n[clean_buf_id(desc_fifo[desc_rd_ptr_n][DESC_BUF_MSB:DESC_BUF_LSB])]) begin
                         pix_fault_sticky_n[ST_REL_NOT_OWNED] = 1'b1;
                         pix_rel_not_owned_cnt_n              = pix_rel_not_owned_cnt_n + 16'd1;
                     end
-                    pix_own_map_n = pix_own_map_n & ~onehot16(desc_fifo[desc_rd_ptr_n][DESC_BUF_MSB:DESC_BUF_LSB]);
+                    pix_own_map_n = pix_own_map_n & ~onehot16(clean_buf_id(desc_fifo[desc_rd_ptr_n][DESC_BUF_MSB:DESC_BUF_LSB]));
 
                     desc_rd_ptr_n = (desc_rd_ptr_n + 1'b1) & DESC_MASK;
                     desc_count_n  = desc_count_n - 1'b1;
@@ -832,11 +839,11 @@ module hdmi_480p_core (
                                 pix_own_map_n = pix_own_map_n & ~onehot16(cur_buf_idx_r_n);
                             end
 
-                            cur_buf_idx_r_n = desc_fifo[desc_rd_ptr_n][DESC_BUF_MSB:DESC_BUF_LSB];
+                            cur_buf_idx_r_n = clean_buf_id(desc_fifo[desc_rd_ptr_n][DESC_BUF_MSB:DESC_BUF_LSB]);
                             cur_buf_valid_n = 1'b1;
 
                             if (desc_fifo[desc_rd_ptr_n][DESC_MARKER_BIT]) begin
-                                cur_buf_idx_r_n = desc_fifo[desc_rd_ptr_n][BUF_BITS-1:0];
+                                cur_buf_idx_r_n = clean_buf_id(desc_fifo[desc_rd_ptr_n][BUF_BITS-1:0]);
                                 cur_buf_valid_n = 1'b1;
                             end
 
@@ -888,20 +895,20 @@ module hdmi_480p_core (
                     dbg_last_dup_h_n = {5'd0, h_cnt};
                     uf_streak_n = 4'd0;
                 end else if ((desc_count_n != 0) && (do_drop_n || (desc_count_n > HIGH_WM))) begin
-                    rel_accum_n = rel_accum_n | onehot16(desc_fifo[desc_rd_ptr_n][DESC_BUF_MSB:DESC_BUF_LSB]);
+                    rel_accum_n = rel_accum_n | onehot16(clean_buf_id(desc_fifo[desc_rd_ptr_n][DESC_BUF_MSB:DESC_BUF_LSB]));
 
-                    if (!pix_own_map_n[desc_fifo[desc_rd_ptr_n][DESC_BUF_MSB:DESC_BUF_LSB]]) begin
+                    if (!pix_own_map_n[clean_buf_id(desc_fifo[desc_rd_ptr_n][DESC_BUF_MSB:DESC_BUF_LSB])]) begin
                         pix_fault_sticky_n[ST_REL_NOT_OWNED] = 1'b1;
                         pix_rel_not_owned_cnt_n              = pix_rel_not_owned_cnt_n + 16'd1;
                     end
-                    pix_own_map_n = pix_own_map_n & ~onehot16(desc_fifo[desc_rd_ptr_n][DESC_BUF_MSB:DESC_BUF_LSB]);
-                    rel_accum_n = rel_accum_n | onehot16(desc_fifo[desc_rd_ptr_n][BUF_BITS-1:0]);
+                    pix_own_map_n = pix_own_map_n & ~onehot16(clean_buf_id(desc_fifo[desc_rd_ptr_n][DESC_BUF_MSB:DESC_BUF_LSB]));
+                    rel_accum_n = rel_accum_n | onehot16(clean_buf_id(desc_fifo[desc_rd_ptr_n][BUF_BITS-1:0]));
 
-                    if (!pix_own_map_n[desc_fifo[desc_rd_ptr_n][BUF_BITS-1:0]]) begin
+                    if (!pix_own_map_n[clean_buf_id(desc_fifo[desc_rd_ptr_n][BUF_BITS-1:0])]) begin
                         pix_fault_sticky_n[ST_REL_NOT_OWNED] = 1'b1;
                         pix_rel_not_owned_cnt_n              = pix_rel_not_owned_cnt_n + 16'd1;
                     end
-                    pix_own_map_n = pix_own_map_n & ~onehot16(desc_fifo[desc_rd_ptr_n][BUF_BITS-1:0]);
+                    pix_own_map_n = pix_own_map_n & ~onehot16(clean_buf_id(desc_fifo[desc_rd_ptr_n][BUF_BITS-1:0]));
 
                     desc_rd_ptr_n = (desc_rd_ptr_n + 1'b1) & DESC_MASK;
                     desc_count_n  = desc_count_n - 1'b1;
