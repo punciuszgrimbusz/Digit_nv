@@ -66,11 +66,17 @@
 61 cam_block_idx – aktuális CAM blokk index (8 soros blokkok a fielden belül)
 62 blocks_per_field_target – cél blokk darabszám egy fielden belül
 63 cam_stopped_early_cnt – hányszor ért véget a field a targetnél kevesebb blokkal
+64 hdmi_frame_repeat_cnt – hány HDMI frame-et kellett ismételni marker hiány miatt
+65 fill_lines_cnt – hány HDMI sort töltöttünk ki field_exhausted kitartással
+66 blocks_left_snapshot – actív régió végén hány blokk maradt (snapshot)
+67 cam_blocks_per_field_last – legutóbbi field alatt CAM hány blokkot küldött
+68 marker_at_head – frame_start pillanatban volt-e marker a FIFO elején
+69 field_start_ok_cnt – hány frame tudott markerrel indulni
 */
 module i2c_diag_pager #(
     parameter integer CLK_HZ  = 27000000,
     parameter integer PERIODS = 3,
-    parameter integer PAGES   = 64   // 0..63
+    parameter integer PAGES   = 70   // 0..69
 )(
     input  wire       clk,
     input  wire       resetn,
@@ -148,6 +154,13 @@ module i2c_diag_pager #(
     input  wire [15:0] dbg_hold_lines_cnt,       // page56
     input  wire [15:0] dbg_hold_stuck_abort_cnt, // page57
     input  wire [15:0] dbg_cam_marker_drop_or_defer_cnt, // page58
+
+    input  wire [15:0] hdmi_frame_repeat_cnt,    // page64
+    input  wire [15:0] fill_lines_cnt,           // page65
+    input  wire [15:0] blocks_left_snapshot,     // page66
+    input  wire [15:0] cam_blocks_per_field_last,// page67
+    input  wire [15:0] marker_at_head,           // page68
+    input  wire [15:0] field_start_ok_cnt,       // page69
 
     output reg         new_sample = 1'b0,
     output reg [7:0]   out_page   = 8'd0,
@@ -290,6 +303,12 @@ module i2c_diag_pager #(
             8'd61: value_mux = {10'd0, dbg_cam_block_idx_cam};
             8'd62: value_mux = {10'd0, dbg_blocks_per_field_target_cam};
             8'd63: value_mux = dbg_cam_stopped_early_cnt_cam;
+            8'd64: value_mux = hdmi_frame_repeat_cnt;
+            8'd65: value_mux = fill_lines_cnt;
+            8'd66: value_mux = blocks_left_snapshot;
+            8'd67: value_mux = cam_blocks_per_field_last;
+            8'd68: value_mux = marker_at_head;
+            8'd69: value_mux = field_start_ok_cnt;
 
             default: value_mux = 16'h0000;
         endcase
