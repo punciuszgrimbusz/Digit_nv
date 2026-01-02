@@ -130,6 +130,13 @@ module hdmi_480p_core_dbg (
         end
     endfunction
 
+    function [BUF_BITS-1:0] clean_buf_id;
+        input [BUF_BITS-1:0] raw;
+        begin
+            clean_buf_id = raw[$clog2(NUM_BUFS)-1:0];
+        end
+    endfunction
+
     // ============================================================
     // PIX -> CAM: release handshake (no-ACK, same as stable)
     // ============================================================
@@ -275,7 +282,7 @@ module hdmi_480p_core_dbg (
 
             if (line_end) begin
                 if (!drop_this_line) begin
-                    desc_bus     <= {cur_line_is_frame_start_cam, in_frame_id, cur_line_y, wr_buf_idx};
+                    desc_bus     <= {cur_line_is_frame_start_cam, in_frame_id, cur_line_y, clean_buf_id(wr_buf_idx)};
                     desc_pending <= 1'b1;
 
                     dbg_cam_desc_sent_cnt <= dbg_cam_desc_sent_cnt + 16'd1;
@@ -498,7 +505,7 @@ module hdmi_480p_core_dbg (
                     desc_count_n             = desc_count_n + 1'b1;
                 end else begin
                     overflow_cnt_n = overflow_cnt_n + 10'd1;
-                    rel_accum_n    = rel_accum_n | onehot8(desc_bus_sync2[DESC_BUF_MSB:DESC_BUF_LSB]);
+                    rel_accum_n    = rel_accum_n | onehot8(clean_buf_id(desc_bus_sync2[DESC_BUF_MSB:DESC_BUF_LSB]));
                 end
             end
 
@@ -508,11 +515,11 @@ module hdmi_480p_core_dbg (
                     if (desc_count_n != 0) begin
                         if (cur_buf_valid_n) rel_accum_n = rel_accum_n | onehot8(cur_buf_idx_r_n);
 
-                        cur_buf_idx_r_n = desc_fifo[desc_rd_ptr_n][DESC_BUF_MSB:DESC_BUF_LSB];
+                        cur_buf_idx_r_n = clean_buf_id(desc_fifo[desc_rd_ptr_n][DESC_BUF_MSB:DESC_BUF_LSB]);
                         cur_buf_valid_n = 1'b1;
 
                         if (desc_fifo[desc_rd_ptr_n][DESC_MARKER_BIT]) begin
-                        cur_buf_idx_r_n = desc_fifo[desc_rd_ptr_n][BUF_BITS-1:0];
+                        cur_buf_idx_r_n = clean_buf_id(desc_fifo[desc_rd_ptr_n][BUF_BITS-1:0]);
                         cur_buf_valid_n = 1'b1;
 
                         if (desc_fifo[desc_rd_ptr_n][BUF_BITS]) begin
@@ -536,8 +543,8 @@ module hdmi_480p_core_dbg (
             // Drift correction: only adjust descriptor depth during HDMI VBLANK
             if (line_start_any && vblank && safe_for_correction) begin
                 if ((desc_count_n != 0) && (do_drop_n || (desc_count_n > HIGH_WM))) begin
-                    rel_accum_n   = rel_accum_n | onehot8(desc_fifo[desc_rd_ptr_n][DESC_BUF_MSB:DESC_BUF_LSB]);
-                    rel_accum_n   = rel_accum_n | onehot8(desc_fifo[desc_rd_ptr_n][BUF_BITS-1:0]);
+                    rel_accum_n   = rel_accum_n | onehot8(clean_buf_id(desc_fifo[desc_rd_ptr_n][DESC_BUF_MSB:DESC_BUF_LSB]));
+                    rel_accum_n   = rel_accum_n | onehot8(clean_buf_id(desc_fifo[desc_rd_ptr_n][BUF_BITS-1:0]));
                     desc_rd_ptr_n = (desc_rd_ptr_n + 1'b1) & DESC_MASK;
                     desc_count_n  = desc_count_n - 1'b1;
                     do_drop_n     = 1'b0;
