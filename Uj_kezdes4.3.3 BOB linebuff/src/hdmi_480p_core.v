@@ -580,6 +580,10 @@ module hdmi_480p_core (
     reg [BUF_BITS-1:0] rx_idx;
     reg                rx_was_owned;
 
+    reg [CAM_DESC_FRAME_BITS-1:0] out_frame_id_expected, out_frame_id_expected_n;
+    reg                           need_frame_resync,     need_frame_resync_n;
+    reg                           freeze_frame,          freeze_frame_n;
+
     localparam integer DBG_BUS_W = 224;
 
     reg [DBG_BUS_W-1:0] dbg_bus_pix = {DBG_BUS_W{1'b0}};
@@ -640,6 +644,10 @@ module hdmi_480p_core (
 
             uf_streak    <= 4'd0;
 
+            out_frame_id_expected <= {CAM_DESC_FRAME_BITS{1'b0}};
+            need_frame_resync     <= 1'b0;
+            freeze_frame          <= 1'b0;
+
         end else begin
             // defaults
             desc_wr_ptr_n    = desc_wr_ptr;
@@ -690,6 +698,10 @@ module hdmi_480p_core (
 
             uf_streak_n              = uf_streak;
 
+            out_frame_id_expected_n  = out_frame_id_expected;
+            need_frame_resync_n      = need_frame_resync;
+            freeze_frame_n           = freeze_frame;
+
             if (!vsync && vsync_d) begin
                 do_drop_n      = (desc_count > HIGH_WM);
                 repeat_phase_n = 1'b0;
@@ -725,7 +737,7 @@ module hdmi_480p_core (
             end
 
             if ((h_cnt == 11'd0) && (v_cnt == V_ACTIVE)) begin
-                seek_armed_n  = 1'b1;
+                seek_armed_n  = need_frame_resync_n;
                 seek_active_n = 1'b0;
                 seek_rem_n    = 5'd0;
             end
@@ -735,6 +747,11 @@ module hdmi_480p_core (
                 seek_active_n = 1'b0;
                 seek_rem_n    = 5'd0;
                 uf_streak_n   = 4'd0;
+
+                freeze_frame_n = 1'b0;
+
+                if (desc_count_n != 0)
+                    out_frame_id_expected_n = desc_fifo[desc_rd_ptr_n][DESC_FRAME_MSB:DESC_FRAME_LSB];
             end
 
             if ((v_cnt >= V_ACTIVE) && seek_armed_n && !seek_active_n) begin
@@ -771,6 +788,8 @@ module hdmi_480p_core (
                         resync_used_n = 1'b1;
                         dbg_last_resync_v_n = {6'd0, v_cnt};
                         dbg_last_resync_h_n = {5'd0, h_cnt};
+
+                        need_frame_resync_n = 1'b0;
                     end else begin
                         seek_rem_n = seek_rem_n - 1'b1;
                     end
@@ -784,33 +803,39 @@ module hdmi_480p_core (
                 end
             end
 
-            if (de && !de_d && (v_cnt < V_ACTIVE)) begin
+            if (de && !de_d && (v_cnt < V_ACTIVE) && !freeze_frame_n) begin
                 if (!repeat_phase_n) begin
                     if (desc_count_n != 0) begin
                         uf_streak_n = 4'd0;
 
-                        if (cur_buf_valid_n) begin
-                            rel_accum_n = rel_accum_n | onehot16(cur_buf_idx_r_n);
+                        if (desc_fifo[desc_rd_ptr_n][DESC_FRAME_MSB:DESC_FRAME_LSB] != out_frame_id_expected_n) begin
+                            freeze_frame_n      = 1'b1;
+                            need_frame_resync_n = 1'b1;
+                        end else begin
+                            if (cur_buf_valid_n) begin
+                                rel_accum_n = rel_accum_n | onehot16(cur_buf_idx_r_n);
 
-                            if (!pix_own_map_n[cur_buf_idx_r_n]) begin
-                                pix_fault_sticky_n[ST_REL_NOT_OWNED] = 1'b1;
-                                pix_rel_not_owned_cnt_n              = pix_rel_not_owned_cnt_n + 16'd1;
+                                if (!pix_own_map_n[cur_buf_idx_r_n]) begin
+                                    pix_fault_sticky_n[ST_REL_NOT_OWNED] = 1'b1;
+                                    pix_rel_not_owned_cnt_n              = pix_rel_not_owned_cnt_n + 16'd1;
+                                end
+                                pix_own_map_n = pix_own_map_n & ~onehot16(cur_buf_idx_r_n);
                             end
-                            pix_own_map_n = pix_own_map_n & ~onehot16(cur_buf_idx_r_n);
+
+                            cur_buf_idx_r_n = desc_fifo[desc_rd_ptr_n][DESC_BUF_MSB:DESC_BUF_LSB];
+                            cur_buf_valid_n = 1'b1;
+
+                            if (desc_fifo[desc_rd_ptr_n][DESC_MARKER_BIT]) begin
+                                cur_buf_idx_r_n = desc_fifo[desc_rd_ptr_n][BUF_BITS-1:0];
+                                cur_buf_valid_n = 1'b1;
+                            end
+
+                            if (desc_fifo[desc_rd_ptr_n][BUF_BITS])
+                                repeat_phase_n = 1'b0;
+
+                            desc_rd_ptr_n = (desc_rd_ptr_n + 1'b1) & DESC_MASK;
+                            desc_count_n  = desc_count_n - 1'b1;
                         end
-
-                        cur_buf_idx_r_n = desc_fifo[desc_rd_ptr_n][DESC_BUF_MSB:DESC_BUF_LSB];
-                        cur_buf_valid_n = 1'b1;
-
-                        if (desc_fifo[desc_rd_ptr_n][DESC_MARKER_BIT])
-                        cur_buf_idx_r_n = desc_fifo[desc_rd_ptr_n][BUF_BITS-1:0];
-                        cur_buf_valid_n = 1'b1;
-
-                        if (desc_fifo[desc_rd_ptr_n][BUF_BITS])
-                            repeat_phase_n = 1'b0;
-
-                        desc_rd_ptr_n = (desc_rd_ptr_n + 1'b1) & DESC_MASK;
-                        desc_count_n  = desc_count_n - 1'b1;
                     end else begin
                         // UNDERFLOW
                         underflow_cnt_n = underflow_cnt_n + 10'd1;
@@ -974,6 +999,10 @@ module hdmi_480p_core (
             pix_overflow_rel_lo8  <= pix_overflow_rel_lo8_n;
 
             uf_streak             <= uf_streak_n;
+
+            out_frame_id_expected <= out_frame_id_expected_n;
+            need_frame_resync     <= need_frame_resync_n;
+            freeze_frame          <= freeze_frame_n;
 
             dbg_last_drop_v   <= dbg_last_drop_v_n;
             dbg_last_dup_v    <= dbg_last_dup_v_n;
