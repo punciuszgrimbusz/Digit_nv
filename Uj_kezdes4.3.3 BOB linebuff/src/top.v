@@ -157,10 +157,17 @@ module top(
     wire [15:0] dbg_hold_stuck_abort_cnt_cam;
     wire [15:0] dbg_cam_marker_drop_or_defer_cnt_cam;
 
+    wire [15:0] hdmi_frame_repeat_cnt_cam;
+    wire [15:0] fill_lines_cnt_cam;
+    wire [15:0] blocks_left_snapshot_cam;
+    wire [15:0] marker_at_head_cam;
+    wire [15:0] field_start_ok_cnt_cam;
+
     wire [5:0] dbg_cam_descq_cnt_cam;
     wire [5:0] dbg_cam_block_idx_cam;
     wire [5:0] dbg_blocks_per_field_target_cam;
     wire [15:0] dbg_cam_stopped_early_cnt_cam;
+    wire [15:0] cam_blocks_per_field_last;
 
     wire        hdmi_vsync_toggle;
 
@@ -209,6 +216,12 @@ module top(
         .dbg_cam_marker_inj_cnt  (dbg_cam_marker_inj_cnt_cam),
         .dbg_cam_marker_drop_or_defer_cnt(dbg_cam_marker_drop_or_defer_cnt_cam),
         .dbg_cam_desc_sent_cnt   (dbg_cam_desc_sent_cnt_cam),
+
+        .hdmi_frame_repeat_cnt_cam (hdmi_frame_repeat_cnt_cam),
+        .fill_lines_cnt_cam        (fill_lines_cnt_cam),
+        .blocks_left_snapshot_cam  (blocks_left_snapshot_cam),
+        .marker_at_head_cam        (marker_at_head_cam),
+        .field_start_ok_cnt_cam    (field_start_ok_cnt_cam),
 
         .dbg_pop_lines_cnt_cam       (dbg_pop_lines_cnt_cam),
         .dbg_hold_lines_cnt_cam      (dbg_hold_lines_cnt_cam),
@@ -323,7 +336,7 @@ module top(
     i2c_diag_pager #(
         .CLK_HZ  (27000000),
         .PERIODS (3),
-        .PAGES   (64)  // 0..63
+        .PAGES   (70)  // 0..69
     ) u_pager (
         .clk    (cam1_pclk),
         .resetn (cam_resetn),
@@ -389,6 +402,13 @@ module top(
         .dbg_marker_distance     (dbg_marker_distance_cam),
         .dbg_last_resync_reason  (dbg_last_resync_reason_cam),
         .dbg_corr_pending_flags  (dbg_corr_pending_flags_cam),
+
+        .hdmi_frame_repeat_cnt   (hdmi_frame_repeat_cnt_cam),
+        .fill_lines_cnt          (fill_lines_cnt_cam),
+        .blocks_left_snapshot    (blocks_left_snapshot_cam),
+        .cam_blocks_per_field_last(cam_blocks_per_field_last),
+        .marker_at_head          (marker_at_head_cam),
+        .field_start_ok_cnt      (field_start_ok_cnt_cam),
 
         .dbg_pop_lines_cnt       (dbg_pop_lines_cnt_cam),
         .dbg_hold_lines_cnt      (dbg_hold_lines_cnt_cam),
