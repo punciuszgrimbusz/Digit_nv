@@ -133,6 +133,12 @@ module top(
     wire [15:0] dbg_last_dup_h_cam;
     wire [15:0] dbg_last_resync_h_cam;
 
+    wire [15:0] dbg_soft_drop_lines_cnt_cam;
+    wire [15:0] dbg_soft_dup_lines_cnt_cam;
+    wire [15:0] dbg_hard_resync_cnt_cam;
+    wire [15:0] dbg_last_soft_corr_v_cam;
+    wire [15:0] dbg_corr_skip_marker_cnt_cam;
+
     wire [5:0] dbg_cam_descq_cnt_cam;
 
     wire        hdmi_vsync_toggle;
@@ -194,6 +200,12 @@ module top(
         .dbg_last_drop_h_cam        (dbg_last_drop_h_cam),
         .dbg_last_dup_h_cam         (dbg_last_dup_h_cam),
         .dbg_last_resync_h_cam      (dbg_last_resync_h_cam),
+
+        .dbg_soft_drop_lines_cnt_cam(dbg_soft_drop_lines_cnt_cam),
+        .dbg_soft_dup_lines_cnt_cam (dbg_soft_dup_lines_cnt_cam),
+        .dbg_hard_resync_cnt_cam    (dbg_hard_resync_cnt_cam),
+        .dbg_last_soft_corr_v_cam   (dbg_last_soft_corr_v_cam),
+        .dbg_corr_skip_marker_cnt_cam(dbg_corr_skip_marker_cnt_cam),
 
         .dbg_cam_descq_cnt_cam      (dbg_cam_descq_cnt_cam),
 
@@ -269,7 +281,7 @@ module top(
     i2c_diag_pager #(
         .CLK_HZ  (27000000),
         .PERIODS (10),
-        .PAGES   (40)  // 0..39
+        .PAGES   (45)  // 0..44
     ) u_pager (
         .clk    (cam1_pclk),
         .resetn (cam_resetn),
@@ -312,6 +324,12 @@ module top(
         .dbg_rel_doublefree_cnt  (dbg_rel_doublefree_cnt_cam),
 
         .dbg_cam_descq_cnt_cam   (dbg_cam_descq_cnt_cam),
+
+        .dbg_soft_drop_lines_cnt (dbg_soft_drop_lines_cnt_cam),
+        .dbg_soft_dup_lines_cnt  (dbg_soft_dup_lines_cnt_cam),
+        .dbg_hard_resync_cnt     (dbg_hard_resync_cnt_cam),
+        .dbg_last_soft_corr_v    (dbg_last_soft_corr_v_cam),
+        .dbg_corr_skip_marker_cnt(dbg_corr_skip_marker_cnt_cam),
 
         .dbg_last_drop_v         (dbg_last_drop_v_cam),
         .dbg_last_dup_v          (dbg_last_dup_v_cam),

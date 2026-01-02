@@ -49,6 +49,12 @@ module hdmi_480p_core (
     output reg  [15:0] dbg_last_dup_h_cam      = 16'd0,
     output reg  [15:0] dbg_last_resync_h_cam   = 16'd0,
 
+    output reg  [15:0] dbg_soft_drop_lines_cnt_cam = 16'd0,
+    output reg  [15:0] dbg_soft_dup_lines_cnt_cam  = 16'd0,
+    output reg  [15:0] dbg_hard_resync_cnt_cam     = 16'd0,
+    output reg  [15:0] dbg_last_soft_corr_v_cam    = 16'd0,
+    output reg  [15:0] dbg_corr_skip_marker_cnt_cam= 16'd0,
+
     // --- core cam-domain counterek ---
     output reg  [15:0] dbg_cam_fieldtog_cnt    = 16'd0,
     output reg  [15:0] dbg_cam_marker_inj_cnt  = 16'd0,
@@ -508,6 +514,11 @@ module hdmi_480p_core (
     reg de_d, vsync_d;
     reg repeat_phase, repeat_phase_n;
 
+    // Soft line-slip state
+    reg soft_dup_pending, soft_dup_pending_n;
+    reg soft_corrected_this_frame, soft_corrected_this_frame_n;
+    reg allow_hard_resync, allow_hard_resync_n;
+
     reg [BUF_BITS-1:0] cur_buf_idx_r;
     reg [BUF_BITS-1:0] cur_buf_idx_r_n;
     reg                cur_buf_valid;
@@ -522,6 +533,13 @@ module hdmi_480p_core (
     localparam integer HIGH_WM    = (NUM_BUFS - 2);  // 14: drop threshold
     localparam integer LOW_WM     = (NUM_BUFS - 8);  // 8 : duplicate threshold
     localparam integer SAFE_START = V_ACTIVE - 128;
+
+    localparam integer SOFT_TARGET = (DESC_DEPTH/2);
+    localparam integer SOFT_HI     = 2;
+    localparam integer SOFT_LO     = 2;
+    localparam signed  [6:0] SOFT_TARGET_S = SOFT_TARGET;
+    localparam signed  [3:0] SOFT_HI_S     = SOFT_HI;
+    localparam signed  [3:0] SOFT_LO_S     = SOFT_LO;
 
     wire safe_for_correction = (v_cnt >= SAFE_START);
 
@@ -538,9 +556,16 @@ module hdmi_480p_core (
     reg [15:0] dbg_last_dup_v,     dbg_last_dup_v_n;
     reg [15:0] dbg_last_resync_v,  dbg_last_resync_v_n;
 
+    reg [15:0] last_soft_corr_v,   last_soft_corr_v_n;
+
     reg [15:0] dbg_last_drop_h,    dbg_last_drop_h_n;
     reg [15:0] dbg_last_dup_h,     dbg_last_dup_h_n;
     reg [15:0] dbg_last_resync_h,  dbg_last_resync_h_n;
+
+    reg [15:0] soft_drop_lines_cnt, soft_drop_lines_cnt_n;
+    reg [15:0] soft_dup_lines_cnt,  soft_dup_lines_cnt_n;
+    reg [15:0] hard_resync_cnt,     hard_resync_cnt_n;
+    reg [15:0] corr_skip_marker_cnt, corr_skip_marker_cnt_n;
 
     reg [9:0] underflow_cnt_n, overflow_cnt_n;
     reg [2:0] drop_used_n, dup_used_n;
@@ -554,6 +579,7 @@ module hdmi_480p_core (
     reg [4:0] marker_off_pix;   // 0..31
     integer mi;
     reg [DESC_BITS-1:0] midx;
+    reg force_repeat_line;
 
     always @* begin
         marker_found_pix = 1'b0;
@@ -597,7 +623,7 @@ module hdmi_480p_core (
     reg                           need_frame_resync,     need_frame_resync_n;
     reg                           freeze_frame,          freeze_frame_n;
 
-    localparam integer DBG_BUS_W = 224;
+    localparam integer DBG_BUS_W = 304;
 
     reg [DBG_BUS_W-1:0] dbg_bus_pix = {DBG_BUS_W{1'b0}};
     reg                 dbg_tog_pix = 1'b0;
@@ -618,6 +644,9 @@ module hdmi_480p_core (
             vsync_d       <= 1'b1;
             vsync_toggle_pix <= 1'b0;
             repeat_phase  <= 1'b0;
+            soft_dup_pending <= 1'b0;
+            soft_corrected_this_frame <= 1'b0;
+            allow_hard_resync <= 1'b1;
 
             cur_buf_idx_r <= 4'd0;
             cur_buf_valid <= 1'b0;
@@ -640,10 +669,16 @@ module hdmi_480p_core (
             dbg_last_drop_v   <= 16'd0;
             dbg_last_dup_v    <= 16'd0;
             dbg_last_resync_v <= 16'd0;
+            last_soft_corr_v  <= 16'd0;
 
             dbg_last_drop_h   <= 16'd0;
             dbg_last_dup_h    <= 16'd0;
             dbg_last_resync_h <= 16'd0;
+
+            soft_drop_lines_cnt  <= 16'd0;
+            soft_dup_lines_cnt   <= 16'd0;
+            hard_resync_cnt      <= 16'd0;
+            corr_skip_marker_cnt <= 16'd0;
 
             seek_armed    <= 1'b0;
             seek_active   <= 1'b0;
@@ -683,6 +718,9 @@ module hdmi_480p_core (
             vsync_d          <= vsync;
             vsync_toggle_pix <= vsync_toggle_pix;
             repeat_phase_n   = repeat_phase;
+            soft_dup_pending_n = soft_dup_pending;
+            soft_corrected_this_frame_n = soft_corrected_this_frame;
+            allow_hard_resync_n = allow_hard_resync;
 
             cur_buf_idx_r_n  = cur_buf_idx_r;
             cur_buf_valid_n  = cur_buf_valid;
@@ -706,10 +744,16 @@ module hdmi_480p_core (
             dbg_last_drop_v_n   = dbg_last_drop_v;
             dbg_last_dup_v_n    = dbg_last_dup_v;
             dbg_last_resync_v_n = dbg_last_resync_v;
+            last_soft_corr_v_n  = last_soft_corr_v;
 
             dbg_last_drop_h_n   = dbg_last_drop_h;
             dbg_last_dup_h_n    = dbg_last_dup_h;
             dbg_last_resync_h_n = dbg_last_resync_h;
+
+            soft_drop_lines_cnt_n  = soft_drop_lines_cnt;
+            soft_dup_lines_cnt_n   = soft_dup_lines_cnt;
+            hard_resync_cnt_n      = hard_resync_cnt;
+            corr_skip_marker_cnt_n = corr_skip_marker_cnt;
 
             seek_armed_n     = seek_armed;
             seek_active_n    = seek_active;
@@ -728,9 +772,11 @@ module hdmi_480p_core (
             freeze_frame_n           = freeze_frame;
 
             if (!vsync && vsync_d && vblank) begin
-                do_drop_n      = (desc_count > HIGH_WM);
+                do_drop_n      = 1'b0;
                 repeat_phase_n = 1'b0;
                 uf_streak_n    = 4'd0;
+                soft_corrected_this_frame_n = 1'b0;
+                soft_dup_pending_n          = 1'b0;
 
                 vsync_toggle_pix <= ~vsync_toggle_pix;
             end
@@ -779,6 +825,9 @@ module hdmi_480p_core (
 
                 if (desc_count_n != 0)
                     out_frame_id_expected_n = desc_fifo[desc_rd_ptr_n][DESC_FRAME_MSB:DESC_FRAME_LSB];
+
+                if (have_any_line_n)
+                    allow_hard_resync_n = 1'b0;
             end
 
             if (vblank && safe_for_correction && seek_armed_n && !seek_active_n) begin
@@ -808,16 +857,20 @@ module hdmi_480p_core (
                     if (dup_budget_n != 8'hFF)
                         dup_budget_n = dup_budget_n + 8'd1;
 
-                    if (seek_rem_n == 5'd1) begin
-                        seek_rem_n    = 5'd0;
-                        seek_active_n = 1'b0;
-                        seek_armed_n  = 1'b0;
-                        resync_used_n = 1'b1;
-                        dbg_last_resync_v_n = {6'd0, v_cnt};
-                        dbg_last_resync_h_n = {5'd0, h_cnt};
+                        if (seek_rem_n == 5'd1) begin
+                            seek_rem_n    = 5'd0;
+                            seek_active_n = 1'b0;
+                            seek_armed_n  = 1'b0;
+                            resync_used_n = 1'b1;
+                            dbg_last_resync_v_n = {6'd0, v_cnt};
+                            dbg_last_resync_h_n = {5'd0, h_cnt};
 
-                        need_frame_resync_n = 1'b0;
-                    end else begin
+                            if (hard_resync_cnt_n != 16'hFFFF)
+                                hard_resync_cnt_n = hard_resync_cnt_n + 16'd1;
+                            allow_hard_resync_n = 1'b0;
+
+                            need_frame_resync_n = 1'b0;
+                        end else begin
                         seek_rem_n = seek_rem_n - 1'b1;
                     end
                 end else begin
@@ -831,60 +884,77 @@ module hdmi_480p_core (
             end
 
             if (de && !de_d && (v_cnt < V_ACTIVE) && !freeze_frame_n) begin
-                if (!repeat_phase_n) begin
-                    if (desc_count_n != 0) begin
-                        uf_streak_n = 4'd0;
+                force_repeat_line = 1'b0;
 
-                        if (desc_fifo[desc_rd_ptr_n][DESC_FRAME_MSB:DESC_FRAME_LSB] != out_frame_id_expected_n) begin
-                            freeze_frame_n      = 1'b1;
-                            need_frame_resync_n = 1'b1;
+                if (soft_dup_pending_n && cur_buf_valid_n) begin
+                    force_repeat_line            = 1'b1;
+                    soft_dup_pending_n           = 1'b0;
+                    soft_corrected_this_frame_n  = 1'b1;
+                end
+
+                if (!force_repeat_line) begin
+                    if (!repeat_phase_n) begin
+                        if (desc_count_n != 0) begin
+                            uf_streak_n = 4'd0;
+
+                            if (desc_fifo[desc_rd_ptr_n][DESC_FRAME_MSB:DESC_FRAME_LSB] != out_frame_id_expected_n) begin
+                                if (allow_hard_resync_n) begin
+                                    freeze_frame_n      = 1'b1;
+                                    need_frame_resync_n = 1'b1;
+                                end else begin
+                                    out_frame_id_expected_n = desc_fifo[desc_rd_ptr_n][DESC_FRAME_MSB:DESC_FRAME_LSB];
+                                end
+                            end else begin
+                                if (cur_buf_valid_n) begin
+                                    rel_accum_n = rel_accum_n | onehot16(cur_buf_idx_r_n);
+
+                                    if (!pix_own_map_n[cur_buf_idx_r_n]) begin
+                                        pix_fault_sticky_n[ST_REL_NOT_OWNED] = 1'b1;
+                                        pix_rel_not_owned_cnt_n              = pix_rel_not_owned_cnt_n + 16'd1;
+                                    end
+                                    pix_own_map_n = pix_own_map_n & ~onehot16(cur_buf_idx_r_n);
+                                end
+
+                                cur_buf_idx_r_n = clean_buf_id(desc_fifo[desc_rd_ptr_n][DESC_BUF_MSB:DESC_BUF_LSB]);
+                                cur_buf_valid_n = 1'b1;
+
+                                if (desc_fifo[desc_rd_ptr_n][DESC_MARKER_BIT]) begin
+                                    cur_buf_idx_r_n = clean_buf_id(desc_fifo[desc_rd_ptr_n][BUF_BITS-1:0]);
+                                    cur_buf_valid_n = 1'b1;
+                                end
+
+                                if (desc_fifo[desc_rd_ptr_n][BUF_BITS])
+                                    repeat_phase_n = 1'b0;
+
+                                desc_rd_ptr_n = (desc_rd_ptr_n + 1'b1) & DESC_MASK;
+                                desc_count_n  = desc_count_n - 1'b1;
+                            end
                         end else begin
-                            if (cur_buf_valid_n) begin
+                            // UNDERFLOW
+                            underflow_cnt_n = underflow_cnt_n + 10'd1;
+                            if (uf_streak_n != 4'hF) uf_streak_n = uf_streak_n + 4'd1;
+
+                            // DEADLOCK BREAKER (16 buf-hoz skálázva)
+                            if (cur_buf_valid_n &&
+                               ((uf_streak_n >= 4'd2) || (popcount16(pix_own_map_n) >= 5'd14))) begin
+
                                 rel_accum_n = rel_accum_n | onehot16(cur_buf_idx_r_n);
 
                                 if (!pix_own_map_n[cur_buf_idx_r_n]) begin
                                     pix_fault_sticky_n[ST_REL_NOT_OWNED] = 1'b1;
                                     pix_rel_not_owned_cnt_n              = pix_rel_not_owned_cnt_n + 16'd1;
                                 end
-                                pix_own_map_n = pix_own_map_n & ~onehot16(cur_buf_idx_r_n);
+                                pix_own_map_n   = pix_own_map_n & ~onehot16(cur_buf_idx_r_n);
+                                cur_buf_valid_n = 1'b0;
                             end
-
-                            cur_buf_idx_r_n = clean_buf_id(desc_fifo[desc_rd_ptr_n][DESC_BUF_MSB:DESC_BUF_LSB]);
-                            cur_buf_valid_n = 1'b1;
-
-                            if (desc_fifo[desc_rd_ptr_n][DESC_MARKER_BIT]) begin
-                                cur_buf_idx_r_n = clean_buf_id(desc_fifo[desc_rd_ptr_n][BUF_BITS-1:0]);
-                                cur_buf_valid_n = 1'b1;
-                            end
-
-                            if (desc_fifo[desc_rd_ptr_n][BUF_BITS])
-                                repeat_phase_n = 1'b0;
-
-                            desc_rd_ptr_n = (desc_rd_ptr_n + 1'b1) & DESC_MASK;
-                            desc_count_n  = desc_count_n - 1'b1;
-                        end
-                    end else begin
-                        // UNDERFLOW
-                        underflow_cnt_n = underflow_cnt_n + 10'd1;
-                        if (uf_streak_n != 4'hF) uf_streak_n = uf_streak_n + 4'd1;
-
-                        // DEADLOCK BREAKER (16 buf-hoz skálázva)
-                        if (cur_buf_valid_n &&
-                           ((uf_streak_n >= 4'd2) || (popcount16(pix_own_map_n) >= 5'd14))) begin
-
-                            rel_accum_n = rel_accum_n | onehot16(cur_buf_idx_r_n);
-
-                            if (!pix_own_map_n[cur_buf_idx_r_n]) begin
-                                pix_fault_sticky_n[ST_REL_NOT_OWNED] = 1'b1;
-                                pix_rel_not_owned_cnt_n              = pix_rel_not_owned_cnt_n + 16'd1;
-                            end
-                            pix_own_map_n   = pix_own_map_n & ~onehot16(cur_buf_idx_r_n);
-                            cur_buf_valid_n = 1'b0;
                         end
                     end
                 end
 
-                repeat_phase_n = ~repeat_phase_n;
+                if (force_repeat_line)
+                    repeat_phase_n = 1'b1;
+                else
+                    repeat_phase_n = ~repeat_phase_n;
 
                 if (desc_count_n < desc_min_n) desc_min_n = desc_count_n;
                 if (desc_count_n > desc_max_n) desc_max_n = desc_count_n;
@@ -896,42 +966,57 @@ module hdmi_480p_core (
 
             // Drift correction: only adjust descriptor depth during HDMI VBLANK
             if (line_start_any && vblank && safe_for_correction) begin
-                drop_desc       = desc_fifo[desc_rd_ptr_n];
-                drop_buf_idx    = clean_buf_id(drop_desc[DESC_BUF_MSB:DESC_BUF_LSB]);
-                drop_has_marker = drop_desc[DESC_MARKER_BIT];
-                drop_owned      = pix_own_map_n[drop_buf_idx];
+                if (!soft_corrected_this_frame_n) begin
+                    drop_desc       = desc_fifo[desc_rd_ptr_n];
+                    drop_buf_idx    = clean_buf_id(drop_desc[DESC_BUF_MSB:DESC_BUF_LSB]);
+                    drop_has_marker = drop_desc[DESC_MARKER_BIT];
+                    drop_owned      = pix_own_map_n[drop_buf_idx];
 
-                if (desc_count_n < LOW_WM) begin
-                    if (dup_budget_n != 8'd0)
-                        dup_budget_n = dup_budget_n - 8'd1;
+                    if ($signed({1'b0, desc_count_n}) - SOFT_TARGET_S > SOFT_HI_S) begin
+                        if (desc_count_n != 0) begin
+                            if (drop_has_marker) begin
+                                soft_corrected_this_frame_n = 1'b1;
+                                if (corr_skip_marker_cnt_n != 16'hFFFF)
+                                    corr_skip_marker_cnt_n = corr_skip_marker_cnt_n + 16'd1;
+                            end else begin
+                                soft_corrected_this_frame_n = 1'b1;
+                                last_soft_corr_v_n = {6'd0, v_cnt};
 
-                    if (dup_used_n != 3'd7) dup_used_n = dup_used_n + 3'd1;
-                    dbg_last_dup_v_n = {6'd0, v_cnt};
-                    dbg_last_dup_h_n = {5'd0, h_cnt};
-                    uf_streak_n = 4'd0;
-                end else if ((desc_count_n != 0) && (do_drop_n || (desc_count_n > HIGH_WM))) begin
-                    if (!drop_has_marker) begin
-                        if (drop_owned) begin
-                            rel_accum_n   = rel_accum_n | onehot16(drop_buf_idx);
-                            pix_own_map_n = pix_own_map_n & ~onehot16(drop_buf_idx);
-                        end else begin
-                            pix_fault_sticky_n[ST_REL_NOT_OWNED] = 1'b1;
-                            pix_rel_not_owned_cnt_n              = pix_rel_not_owned_cnt_n + 16'd1;
+                                if (soft_drop_lines_cnt_n != 16'hFFFF)
+                                    soft_drop_lines_cnt_n = soft_drop_lines_cnt_n + 16'd1;
+
+                                if (drop_owned) begin
+                                    rel_accum_n   = rel_accum_n | onehot16(drop_buf_idx);
+                                    pix_own_map_n = pix_own_map_n & ~onehot16(drop_buf_idx);
+                                end else begin
+                                    pix_fault_sticky_n[ST_REL_NOT_OWNED] = 1'b1;
+                                    pix_rel_not_owned_cnt_n              = pix_rel_not_owned_cnt_n + 16'd1;
+                                end
+
+                                desc_rd_ptr_n = (desc_rd_ptr_n + 1'b1) & DESC_MASK;
+                                desc_count_n  = desc_count_n - 1'b1;
+
+                                if (drop_used_n != 3'd7) drop_used_n = drop_used_n + 3'd1;
+                                dbg_last_drop_v_n = {6'd0, v_cnt};
+                                dbg_last_drop_h_n = {5'd0, h_cnt};
+                                uf_streak_n = 4'd0;
+                            end
                         end
+                    end else if ($signed({1'b0, desc_count_n}) - SOFT_TARGET_S < -SOFT_LO_S) begin
+                        if (cur_buf_valid_n) begin
+                            soft_corrected_this_frame_n = 1'b1;
+                            last_soft_corr_v_n = {6'd0, v_cnt};
 
-                        desc_rd_ptr_n = (desc_rd_ptr_n + 1'b1) & DESC_MASK;
-                        desc_count_n  = desc_count_n - 1'b1;
-                        do_drop_n     = 1'b0;
+                            if (soft_dup_lines_cnt_n != 16'hFFFF)
+                                soft_dup_lines_cnt_n = soft_dup_lines_cnt_n + 16'd1;
 
-                        if (dup_budget_n != 8'hFF)
-                            dup_budget_n = dup_budget_n + 8'd1;
+                            if (dup_used_n != 3'd7) dup_used_n = dup_used_n + 3'd1;
+                            dbg_last_dup_v_n = {6'd0, v_cnt};
+                            dbg_last_dup_h_n = {5'd0, h_cnt};
+                            uf_streak_n = 4'd0;
 
-                        if (drop_used_n != 3'd7) drop_used_n = drop_used_n + 3'd1;
-                        dbg_last_drop_v_n = {6'd0, v_cnt};
-                        dbg_last_drop_h_n = {5'd0, h_cnt};
-                        uf_streak_n = 4'd0;
-                    end else begin
-                        do_drop_n = 1'b0;
+                            soft_dup_pending_n = 1'b1;
+                        end
                     end
                 end
 
@@ -952,6 +1037,12 @@ module hdmi_480p_core (
             if (frame_start) begin
                 // bus formatot NEM törjük: own_map low8, marker_off low4, desc_count low5
                 dbg_bus_pix <= {
+                    soft_drop_lines_cnt_n,      // [303:288]
+                    soft_dup_lines_cnt_n,       // [287:272]
+                    hard_resync_cnt_n,          // [271:256]
+                    last_soft_corr_v_n,         // [255:240]
+                    corr_skip_marker_cnt_n,     // [239:224]
+
                     dbg_last_drop_v_n,           // [223:208]
                     dbg_last_dup_v_n,            // [207:192]
                     dbg_last_resync_v_n,         // [191:176]
@@ -1034,6 +1125,16 @@ module hdmi_480p_core (
             need_frame_resync     <= need_frame_resync_n;
             freeze_frame          <= freeze_frame_n;
 
+            soft_dup_pending          <= soft_dup_pending_n;
+            soft_corrected_this_frame <= soft_corrected_this_frame_n;
+            allow_hard_resync         <= allow_hard_resync_n;
+
+            last_soft_corr_v      <= last_soft_corr_v_n;
+            soft_drop_lines_cnt   <= soft_drop_lines_cnt_n;
+            soft_dup_lines_cnt    <= soft_dup_lines_cnt_n;
+            hard_resync_cnt       <= hard_resync_cnt_n;
+            corr_skip_marker_cnt  <= corr_skip_marker_cnt_n;
+
             dbg_last_drop_v   <= dbg_last_drop_v_n;
             dbg_last_dup_v    <= dbg_last_dup_v_n;
             dbg_last_resync_v <= dbg_last_resync_v_n;
@@ -1082,12 +1183,24 @@ module hdmi_480p_core (
             dbg_last_dup_h_cam      <= 16'd0;
             dbg_last_resync_h_cam   <= 16'd0;
 
+            dbg_soft_drop_lines_cnt_cam <= 16'd0;
+            dbg_soft_dup_lines_cnt_cam  <= 16'd0;
+            dbg_hard_resync_cnt_cam     <= 16'd0;
+            dbg_last_soft_corr_v_cam    <= 16'd0;
+            dbg_corr_skip_marker_cnt_cam<= 16'd0;
+
         end else begin
             dbg_tsync     <= {dbg_tsync[1:0], dbg_tog_pix};
             dbg_bus_sync1 <= dbg_bus_pix;
             dbg_bus_sync2 <= dbg_bus_sync1;
 
             if (dbg_new) begin
+                dbg_soft_drop_lines_cnt_cam <= dbg_bus_sync2[303:288];
+                dbg_soft_dup_lines_cnt_cam  <= dbg_bus_sync2[287:272];
+                dbg_hard_resync_cnt_cam     <= dbg_bus_sync2[271:256];
+                dbg_last_soft_corr_v_cam    <= dbg_bus_sync2[255:240];
+                dbg_corr_skip_marker_cnt_cam<= dbg_bus_sync2[239:224];
+
                 dbg_desc_count_cam      <= dbg_bus_sync2[4:0];
                 dbg_underflow_low10_cam <= dbg_bus_sync2[14:5];
                 dbg_overflow_low10_cam  <= dbg_bus_sync2[24:15];
