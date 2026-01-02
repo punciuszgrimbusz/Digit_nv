@@ -100,7 +100,8 @@ module hdmi_480p_core (
         end
     end
 
-    wire de = (h_cnt < H_ACTIVE) && (v_cnt < V_ACTIVE);
+    wire de     = (h_cnt < H_ACTIVE) && (v_cnt < V_ACTIVE);
+    wire vblank = (v_cnt >= V_ACTIVE);
 
     wire hsync = ~((h_cnt >= H_ACTIVE + H_FP) &&
                    (h_cnt <  H_ACTIVE + H_FP + H_SYNC));
@@ -707,7 +708,7 @@ module hdmi_480p_core (
             need_frame_resync_n      = need_frame_resync;
             freeze_frame_n           = freeze_frame;
 
-            if (!vsync && vsync_d) begin
+            if (!vsync && vsync_d && vblank) begin
                 do_drop_n      = (desc_count > HIGH_WM);
                 repeat_phase_n = 1'b0;
                 uf_streak_n    = 4'd0;
@@ -761,7 +762,7 @@ module hdmi_480p_core (
                     out_frame_id_expected_n = desc_fifo[desc_rd_ptr_n][DESC_FRAME_MSB:DESC_FRAME_LSB];
             end
 
-            if ((v_cnt >= V_ACTIVE) && seek_armed_n && !seek_active_n) begin
+            if (vblank && seek_armed_n && !seek_active_n) begin
                 if (marker_found_pix) begin
                     if (marker_off_pix == 5'd0) begin
                         seek_armed_n = 1'b0;
@@ -772,7 +773,7 @@ module hdmi_480p_core (
                 end
             end
 
-            if ((v_cnt >= V_ACTIVE) && seek_active_n) begin
+            if (vblank && seek_active_n) begin
                 if ((seek_rem_n != 5'd0) && (desc_count_n != 0)) begin
                     rel_accum_n = rel_accum_n | onehot16(desc_fifo[desc_rd_ptr_n][DESC_BUF_MSB:DESC_BUF_LSB]);
 
@@ -874,7 +875,8 @@ module hdmi_480p_core (
                 end
             end
 
-            if (line_start_any && (v_cnt >= V_ACTIVE)) begin
+            // Drift correction: only adjust descriptor depth during HDMI VBLANK
+            if (line_start_any && vblank) begin
                 if (desc_count_n < LOW_WM) begin
                     if (dup_budget_n != 8'd0)
                         dup_budget_n = dup_budget_n - 8'd1;

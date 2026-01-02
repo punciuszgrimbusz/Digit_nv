@@ -87,7 +87,8 @@ module hdmi_480p_core_dbg (
         end
     end
 
-    wire de = (h_cnt < H_ACTIVE) && (v_cnt < V_ACTIVE);
+    wire de     = (h_cnt < H_ACTIVE) && (v_cnt < V_ACTIVE);
+    wire vblank = (v_cnt >= V_ACTIVE);
 
     wire hsync = ~((h_cnt >= H_ACTIVE + H_FP) &&
                    (h_cnt <  H_ACTIVE + H_FP + H_SYNC));
@@ -468,7 +469,7 @@ module hdmi_480p_core_dbg (
             desc_max_n       = desc_max;
 
             // decide once per HDMI frame (vsync falling edge)
-            if (!vsync && vsync_d) begin
+            if (!vsync && vsync_d && vblank) begin
                 do_drop_n      = (desc_count > HIGH_WM);
                 do_dup_n       = (desc_count < LOW_WM);
                 repeat_phase_n = 1'b0;
@@ -530,7 +531,8 @@ module hdmi_480p_core_dbg (
                 if (desc_count_n > desc_max_n) desc_max_n = desc_count_n;
             end
 
-            if (line_start_any && (v_cnt >= V_ACTIVE)) begin
+            // Drift correction: only adjust descriptor depth during HDMI VBLANK
+            if (line_start_any && vblank) begin
                 if ((desc_count_n != 0) && (do_drop_n || (desc_count_n > HIGH_WM))) begin
                     rel_accum_n   = rel_accum_n | onehot8(desc_fifo[desc_rd_ptr_n][DESC_BUF_MSB:DESC_BUF_LSB]);
                     rel_accum_n   = rel_accum_n | onehot8(desc_fifo[desc_rd_ptr_n][BUF_BITS-1:0]);
