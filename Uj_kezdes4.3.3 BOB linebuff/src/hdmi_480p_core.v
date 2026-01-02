@@ -169,30 +169,33 @@ module hdmi_480p_core (
     );
 
     // ============================================================
-    // CDC #2: CAM -> PIX descriptor (5-bit: marker + 4-bit idx)
+    // CDC #2: CAM -> PIX descriptor (frame marker + frame_id + y + idx)
     // ============================================================
-    localparam integer CAM_DESC_DEPTH = 32;
-    localparam integer CAM_DESC_BITS  = 5;
-    localparam [CAM_DESC_BITS-1:0] CAM_DESC_MASK = 5'h1F;
+    localparam integer CAM_DESC_DEPTH     = 32;
+    localparam integer CAM_DESC_PTR_BITS  = 5;
+    localparam integer CAM_DESC_FRAME_BITS= 16;
+    localparam integer CAM_DESC_Y_BITS    = 10;
+    localparam integer CAM_DESC_DATA_BITS = 1 + CAM_DESC_FRAME_BITS + CAM_DESC_Y_BITS + BUF_BITS;
+    localparam [CAM_DESC_PTR_BITS-1:0] CAM_DESC_MASK = 5'h1F;
 
-    reg  [BUF_BITS:0]        cam_desc_fifo [0:CAM_DESC_DEPTH-1];
-    reg  [CAM_DESC_BITS-1:0] cam_desc_wr_ptr;
-    reg  [CAM_DESC_BITS-1:0] cam_desc_rd_ptr;
-    reg  [5:0]               cam_desc_count;
+    reg  [CAM_DESC_DATA_BITS-1:0] cam_desc_fifo [0:CAM_DESC_DEPTH-1];
+    reg  [CAM_DESC_PTR_BITS-1:0]  cam_desc_wr_ptr;
+    reg  [CAM_DESC_PTR_BITS-1:0]  cam_desc_rd_ptr;
+    reg  [5:0]                    cam_desc_count;
 
-    wire [BUF_BITS:0] cam_desc_head = cam_desc_fifo[cam_desc_rd_ptr];
+    wire [CAM_DESC_DATA_BITS-1:0] cam_desc_head = cam_desc_fifo[cam_desc_rd_ptr];
 
     wire desc_busy_cam;
     wire desc_send_cam = (cam_desc_count != 0) && !desc_busy_cam;
 
-    wire [BUF_BITS:0] desc_bus_cdc;
-    wire              desc_req_tog_cdc;
-    wire              desc_ack_tog_cdc;
+    wire [CAM_DESC_DATA_BITS-1:0] desc_bus_cdc;
+    wire                          desc_req_tog_cdc;
+    wire                          desc_ack_tog_cdc;
 
-    wire              desc_new_pix;
-    wire [BUF_BITS:0] desc_data_pix;
+    wire                          desc_new_pix;
+    wire [CAM_DESC_DATA_BITS-1:0] desc_data_pix;
 
-    cdc_reqack_bus #(.W(BUF_BITS+1)) u_desc_cdc (
+    cdc_reqack_bus #(.W(CAM_DESC_DATA_BITS)) u_desc_cdc (
         .src_clk    (cam_pclk),
         .src_resetn (cam_resetn),
         .src_send   (desc_send_cam),
@@ -231,6 +234,9 @@ module hdmi_480p_core (
 
     localparam integer FIELD_LINES_TARGET = (V_ACTIVE/2); // 240
     reg  [9:0] line_in_field = 10'd0;
+
+    reg  [CAM_DESC_FRAME_BITS-1:0] in_frame_id = {CAM_DESC_FRAME_BITS{1'b0}};
+    reg  [CAM_DESC_Y_BITS-1:0]     cur_line_y;
 
     wire [9:0] line_in_field_pre = frame_edge ? 10'd0 : line_in_field;
     wire       limit_drop_pre    = (line_in_field_pre >= FIELD_LINES_TARGET);
@@ -271,10 +277,10 @@ module hdmi_480p_core (
     end
 
     // calc regs (csak blocking!)
-    reg [15:0]             free_map_calc;
-    reg [CAM_DESC_BITS-1:0] cam_desc_wr_ptr_calc;
-    reg [CAM_DESC_BITS-1:0] cam_desc_rd_ptr_calc;
-    reg [5:0]              cam_desc_count_calc;
+    reg [15:0]               free_map_calc;
+    reg [CAM_DESC_PTR_BITS-1:0] cam_desc_wr_ptr_calc;
+    reg [CAM_DESC_PTR_BITS-1:0] cam_desc_rd_ptr_calc;
+    reg [5:0]                cam_desc_count_calc;
 
     reg pop_desc;
     reg push_req;
@@ -293,8 +299,11 @@ module hdmi_480p_core (
 
             line_in_field               <= 10'd0;
 
-            cam_desc_wr_ptr             <= {CAM_DESC_BITS{1'b0}};
-            cam_desc_rd_ptr             <= {CAM_DESC_BITS{1'b0}};
+            in_frame_id                 <= {CAM_DESC_FRAME_BITS{1'b0}};
+            cur_line_y                  <= {CAM_DESC_Y_BITS{1'b0}};
+
+            cam_desc_wr_ptr             <= {CAM_DESC_PTR_BITS{1'b0}};
+            cam_desc_rd_ptr             <= {CAM_DESC_PTR_BITS{1'b0}};
             cam_desc_count              <= 6'd0;
 
             dbg_cam_fieldtog_cnt        <= 16'd0;
@@ -332,14 +341,19 @@ module hdmi_480p_core (
                 frame_flag_next_line <= 1'b1;
                 dbg_cam_fieldtog_cnt <= dbg_cam_fieldtog_cnt + 16'd1;
 
+                in_frame_id <= in_frame_id + {{(CAM_DESC_FRAME_BITS-1){1'b0}}, 1'b1};
+
                 dbg_free_min_cam <= 4'd15;
                 dbg_free_max_cam <= 4'd0;
 
                 line_in_field <= 10'd0;
+                cur_line_y    <= {CAM_DESC_Y_BITS{1'b0}};
             end
 
             if (line_start) begin
                 line_in_field <= line_in_field_pre + 10'd1;
+
+                cur_line_y <= line_in_field_pre[CAM_DESC_Y_BITS-1:0];
 
                 wr_addr <= 10'd0;
 
@@ -385,7 +399,7 @@ module hdmi_480p_core (
                 if (push_req) begin
                     can_push = (cam_desc_count_calc < CAM_DESC_DEPTH);
                     if (can_push) begin
-                        cam_desc_fifo[cam_desc_wr_ptr_calc] <= {cur_line_is_frame_start_cam, wr_buf_idx};
+                        cam_desc_fifo[cam_desc_wr_ptr_calc] <= {cur_line_is_frame_start_cam, in_frame_id, cur_line_y, wr_buf_idx};
                         cam_desc_wr_ptr_calc                = (cam_desc_wr_ptr_calc + 1'b1) & CAM_DESC_MASK;
                         cam_desc_count_calc                 = cam_desc_count_calc + 1'b1;
 
@@ -460,10 +474,18 @@ module hdmi_480p_core (
     // PIX DOMAIN: descriptor FIFO + bob + watermark correction
     // + FIX: underflow deadlock breaker (release current if starving CAM)
     // ============================================================
-    reg [BUF_BITS:0]     desc_fifo [0:DESC_DEPTH-1];
-    reg [DESC_BITS-1:0]  desc_wr_ptr;
-    reg [DESC_BITS-1:0]  desc_rd_ptr;
-    reg [5:0]            desc_count;
+    localparam integer DESC_BUF_LSB    = 0;
+    localparam integer DESC_BUF_MSB    = BUF_BITS-1;
+    localparam integer DESC_Y_LSB      = BUF_BITS;
+    localparam integer DESC_Y_MSB      = DESC_Y_LSB + CAM_DESC_Y_BITS - 1;
+    localparam integer DESC_FRAME_LSB  = DESC_Y_LSB + CAM_DESC_Y_BITS;
+    localparam integer DESC_FRAME_MSB  = DESC_FRAME_LSB + CAM_DESC_FRAME_BITS - 1;
+    localparam integer DESC_MARKER_BIT = CAM_DESC_DATA_BITS-1;
+
+    reg [CAM_DESC_DATA_BITS-1:0] desc_fifo [0:DESC_DEPTH-1];
+    reg [DESC_BITS-1:0]          desc_wr_ptr;
+    reg [DESC_BITS-1:0]          desc_rd_ptr;
+    reg [5:0]                    desc_count;
 
     reg [DESC_BITS-1:0]  desc_wr_ptr_n;
     reg [DESC_BITS-1:0]  desc_rd_ptr_n;
@@ -528,7 +550,7 @@ module hdmi_480p_core (
         for (mi = 0; mi < DESC_DEPTH; mi = mi + 1) begin
             if (!marker_found_pix && (mi < desc_count)) begin
                 midx = (desc_rd_ptr + mi[DESC_BITS-1:0]) & DESC_MASK;
-                if (desc_fifo[midx][BUF_BITS]) begin
+                if (desc_fifo[midx][DESC_MARKER_BIT]) begin
                     marker_found_pix = 1'b1;
                     marker_off_pix   = mi[4:0];
                 end
@@ -677,7 +699,7 @@ module hdmi_480p_core (
             if (desc_new_pix) begin
                 have_any_line_n = 1'b1;
 
-                rx_idx       = desc_data_pix[BUF_BITS-1:0];
+                rx_idx       = desc_data_pix[DESC_BUF_MSB:DESC_BUF_LSB];
                 rx_was_owned = pix_own_map_n[rx_idx];
 
                 if (rx_was_owned) begin
@@ -728,13 +750,13 @@ module hdmi_480p_core (
 
             if ((v_cnt >= V_ACTIVE) && seek_active_n) begin
                 if ((seek_rem_n != 5'd0) && (desc_count_n != 0)) begin
-                    rel_accum_n = rel_accum_n | onehot16(desc_fifo[desc_rd_ptr_n][BUF_BITS-1:0]);
+                    rel_accum_n = rel_accum_n | onehot16(desc_fifo[desc_rd_ptr_n][DESC_BUF_MSB:DESC_BUF_LSB]);
 
-                    if (!pix_own_map_n[desc_fifo[desc_rd_ptr_n][BUF_BITS-1:0]]) begin
+                    if (!pix_own_map_n[desc_fifo[desc_rd_ptr_n][DESC_BUF_MSB:DESC_BUF_LSB]]) begin
                         pix_fault_sticky_n[ST_REL_NOT_OWNED] = 1'b1;
                         pix_rel_not_owned_cnt_n              = pix_rel_not_owned_cnt_n + 16'd1;
                     end
-                    pix_own_map_n = pix_own_map_n & ~onehot16(desc_fifo[desc_rd_ptr_n][BUF_BITS-1:0]);
+                    pix_own_map_n = pix_own_map_n & ~onehot16(desc_fifo[desc_rd_ptr_n][DESC_BUF_MSB:DESC_BUF_LSB]);
 
                     desc_rd_ptr_n = (desc_rd_ptr_n + 1'b1) & DESC_MASK;
                     desc_count_n  = desc_count_n - 1'b1;
@@ -777,6 +799,10 @@ module hdmi_480p_core (
                             pix_own_map_n = pix_own_map_n & ~onehot16(cur_buf_idx_r_n);
                         end
 
+                        cur_buf_idx_r_n = desc_fifo[desc_rd_ptr_n][DESC_BUF_MSB:DESC_BUF_LSB];
+                        cur_buf_valid_n = 1'b1;
+
+                        if (desc_fifo[desc_rd_ptr_n][DESC_MARKER_BIT])
                         cur_buf_idx_r_n = desc_fifo[desc_rd_ptr_n][BUF_BITS-1:0];
                         cur_buf_valid_n = 1'b1;
 
@@ -826,6 +852,13 @@ module hdmi_480p_core (
                     dbg_last_dup_h_n = {5'd0, h_cnt};
                     uf_streak_n = 4'd0;
                 end else if ((desc_count_n != 0) && (do_drop_n || (desc_count_n > HIGH_WM))) begin
+                    rel_accum_n = rel_accum_n | onehot16(desc_fifo[desc_rd_ptr_n][DESC_BUF_MSB:DESC_BUF_LSB]);
+
+                    if (!pix_own_map_n[desc_fifo[desc_rd_ptr_n][DESC_BUF_MSB:DESC_BUF_LSB]]) begin
+                        pix_fault_sticky_n[ST_REL_NOT_OWNED] = 1'b1;
+                        pix_rel_not_owned_cnt_n              = pix_rel_not_owned_cnt_n + 16'd1;
+                    end
+                    pix_own_map_n = pix_own_map_n & ~onehot16(desc_fifo[desc_rd_ptr_n][DESC_BUF_MSB:DESC_BUF_LSB]);
                     rel_accum_n = rel_accum_n | onehot16(desc_fifo[desc_rd_ptr_n][BUF_BITS-1:0]);
 
                     if (!pix_own_map_n[desc_fifo[desc_rd_ptr_n][BUF_BITS-1:0]]) begin
