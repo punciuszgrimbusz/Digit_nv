@@ -57,11 +57,15 @@
 52 last_resync_reason – 0=none,1=marker_align,2=frameid_mismatch,3=under,4=over
 53 last_soft_corr_v – utolsó soft dup/drop v_cnt (ismételt exportra)
 54 corr_pending_flags – bit0=dup_pending, bit1=drop_pending, bit2=align_pending, bit3=has_corrected_this_frame
+55 pop_lines_cnt – hány aktív sorhoz fogyasztottunk deskriptort az utolsó HDMI frame-ben
+56 hold_lines_cnt – hány aktív sor készült cached/dup/hold útvonalról pop nélkül
+57 hold_stuck_abort_cnt – hány alkalommal kellett hold/dup állapotot megszakítani
+58 cam_marker_drop_or_defer_cnt – marker beadás halasztások/kényszerített eldobások száma
 */
 module i2c_diag_pager #(
     parameter integer CLK_HZ  = 27000000,
     parameter integer PERIODS = 3,
-    parameter integer PAGES   = 55   // 0..54
+    parameter integer PAGES   = 59   // 0..58
 )(
     input  wire       clk,
     input  wire       resetn,
@@ -129,6 +133,11 @@ module i2c_diag_pager #(
     input  wire [15:0] dbg_marker_distance,      // page51
     input  wire [15:0] dbg_last_resync_reason,   // page52
     input  wire [15:0] dbg_corr_pending_flags,   // page54
+
+    input  wire [15:0] dbg_pop_lines_cnt,        // page55
+    input  wire [15:0] dbg_hold_lines_cnt,       // page56
+    input  wire [15:0] dbg_hold_stuck_abort_cnt, // page57
+    input  wire [15:0] dbg_cam_marker_drop_or_defer_cnt, // page58
 
     output reg         new_sample = 1'b0,
     output reg [7:0]   out_page   = 8'd0,
@@ -260,6 +269,11 @@ module i2c_diag_pager #(
             8'd52: value_mux = dbg_last_resync_reason;
             8'd53: value_mux = dbg_last_soft_corr_v;
             8'd54: value_mux = dbg_corr_pending_flags;
+
+            8'd55: value_mux = dbg_pop_lines_cnt;
+            8'd56: value_mux = dbg_hold_lines_cnt;
+            8'd57: value_mux = dbg_hold_stuck_abort_cnt;
+            8'd58: value_mux = dbg_cam_marker_drop_or_defer_cnt;
 
             default: value_mux = 16'h0000;
         endcase
