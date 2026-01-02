@@ -1,7 +1,8 @@
 `timescale 1ns / 1ps
 `default_nettype none
 /*
-0 raw_lines_per_field – nyers sorok/field (cam_field_line_counter mérése)
+0 raw_lines_per_field – nyers sorok/field (cam_field_line_counter mérése);
+   tipikus 0xF2/0xF3 = 242/243 sor/field minták (resync előtti/utáni hossz)
 1 dbg_desc_count – PIX oldali desc FIFO pillanatnyi töltöttség (0..16)
 2 dbg_underflow_low10 – underflow események száma (nincs descriptor amikor kéne sor)
 3 dbg_overflow_low10 – overflow események száma (tele a PIX FIFO, eldob descriptor)
@@ -41,11 +42,16 @@
 37 out_vsync_cnt16 – HDMI vsync számláló LSB16
 38 sof_delta16 = in_sof_cnt16 - out_vsync_cnt16 (mod 16 bit)
 39 lock_status16 – bitmező (bit0=marker_found/locked, bit1=lock_lost_pulse_latched, bit2=resync_event_latched, bit3=frame_miss_event_latched)
+40 soft_drop_lines_cnt – VBLANK-ban végrehajtott soft sor-eldobások száma
+41 soft_dup_lines_cnt – VBLANK-ban végrehajtott soft sor-duplázások száma
+42 hard_resync_cnt – hard resync események száma (reset utáni első lockra limitált)
+43 last_soft_corr_v – utolsó soft korrekció v_cnt értéke
+44 corr_skip_marker_cnt – marker miatt kihagyott soft-drop próbálkozások száma
 */
 module i2c_diag_pager #(
     parameter integer CLK_HZ  = 27000000,
     parameter integer PERIODS = 10,
-    parameter integer PAGES   = 40   // 0..39
+    parameter integer PAGES   = 45   // 0..44
 )(
     input  wire       clk,
     input  wire       resetn,
@@ -96,6 +102,12 @@ module i2c_diag_pager #(
     input  wire [15:0] out_vsync_cnt16,        // page37
     input  wire [15:0] sof_delta16,            // page38
     input  wire [15:0] lock_status16,          // page39
+
+    input  wire [15:0] dbg_soft_drop_lines_cnt,  // page40
+    input  wire [15:0] dbg_soft_dup_lines_cnt,   // page41
+    input  wire [15:0] dbg_hard_resync_cnt,      // page42
+    input  wire [15:0] dbg_last_soft_corr_v,     // page43
+    input  wire [15:0] dbg_corr_skip_marker_cnt, // page44
 
     output reg         new_sample = 1'b0,
     output reg [7:0]   out_page   = 8'd0,
@@ -209,6 +221,12 @@ module i2c_diag_pager #(
             8'd37: value_mux = out_vsync_cnt16;
             8'd38: value_mux = sof_delta16;
             8'd39: value_mux = lock_status16;
+
+            8'd40: value_mux = dbg_soft_drop_lines_cnt;
+            8'd41: value_mux = dbg_soft_dup_lines_cnt;
+            8'd42: value_mux = dbg_hard_resync_cnt;
+            8'd43: value_mux = dbg_last_soft_corr_v;
+            8'd44: value_mux = dbg_corr_skip_marker_cnt;
 
             default: value_mux = 16'h0000;
         endcase
