@@ -156,6 +156,9 @@ module top(
     wire [15:0] dbg_cam_marker_drop_or_defer_cnt_cam;
 
     wire [5:0] dbg_cam_descq_cnt_cam;
+    wire [5:0] dbg_cam_block_idx_cam;
+    wire [5:0] dbg_blocks_per_field_target_cam;
+    wire [15:0] dbg_cam_stopped_early_cnt_cam;
 
     wire        hdmi_vsync_toggle;
 
@@ -240,6 +243,9 @@ module top(
         .dbg_corr_pending_flags_cam (dbg_corr_pending_flags_cam),
 
         .dbg_cam_descq_cnt_cam      (dbg_cam_descq_cnt_cam),
+        .dbg_cam_block_idx_cam      (dbg_cam_block_idx_cam),
+        .dbg_blocks_per_field_target_cam(dbg_blocks_per_field_target_cam),
+        .dbg_cam_stopped_early_cnt_cam(dbg_cam_stopped_early_cnt_cam),
 
         .vsync_toggle_pix    (hdmi_vsync_toggle),
 
@@ -313,7 +319,7 @@ module top(
     i2c_diag_pager #(
         .CLK_HZ  (27000000),
         .PERIODS (3),
-        .PAGES   (59)  // 0..58
+        .PAGES   (62)  // 0..61
     ) u_pager (
         .clk    (cam1_pclk),
         .resetn (cam_resetn),
@@ -362,6 +368,9 @@ module top(
         .dbg_rel_doublefree_cnt  (dbg_rel_doublefree_cnt_cam),
 
         .dbg_cam_descq_cnt_cam   (dbg_cam_descq_cnt_cam),
+        .dbg_cam_block_idx_cam   (dbg_cam_block_idx_cam),
+        .dbg_blocks_per_field_target_cam(dbg_blocks_per_field_target_cam),
+        .dbg_cam_stopped_early_cnt_cam(dbg_cam_stopped_early_cnt_cam),
 
         .dbg_soft_drop_lines_cnt (dbg_soft_drop_lines_cnt_cam),
         .dbg_soft_dup_lines_cnt  (dbg_soft_dup_lines_cnt_cam),

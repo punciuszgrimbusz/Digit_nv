@@ -80,6 +80,11 @@ module hdmi_480p_core (
     // --- NEW: CAM oldali descriptor queue töltöttség (pagerhez/loghoz) ---
     output reg  [5:0]  dbg_cam_descq_cnt_cam   = 6'd0,
 
+    // --- NEW: CAM oldali blokk-telemetria ---
+    output reg  [5:0]  dbg_cam_block_idx_cam   = 6'd0,
+    output wire [5:0]  dbg_blocks_per_field_target_cam,
+    output reg  [15:0] dbg_cam_stopped_early_cnt_cam = 16'd0,
+
     // HDMI TMDS outputs
     output wire        tmds_clk_p,
     output wire        tmds_clk_n,
@@ -254,6 +259,8 @@ module hdmi_480p_core (
     reg [BUF_BITS-1:0] wr_buf_idx;
     reg [9:0]          wr_addr;
 
+    wire block_start = line_start && (line_in_field_pre[2:0] == 3'b000);
+
     reg cam_line_valid_d;
     reg cam_frame_toggle_d;
 
@@ -269,13 +276,21 @@ module hdmi_480p_core (
     wire line_end   = !cam_line_valid &&  cam_line_valid_d;
 
     localparam integer FIELD_LINES_TARGET = (V_ACTIVE/2); // 240
+    localparam integer BLOCK_LINES        = 8;
+    localparam integer BLOCKS_PER_FIELD_TARGET = (FIELD_LINES_TARGET / BLOCK_LINES); // 30 blokkok/field
+    localparam [5:0]   BLOCKS_PER_FIELD_TARGET_6 = BLOCKS_PER_FIELD_TARGET;
     reg  [9:0] line_in_field = 10'd0;
+
+    // blokk-számláló (8 soros blokkok)
+    reg  [5:0] cam_block_idx = 6'd0;
+    assign dbg_blocks_per_field_target_cam = BLOCKS_PER_FIELD_TARGET_6;
 
     reg  [CAM_DESC_FRAME_BITS-1:0] in_frame_id = {CAM_DESC_FRAME_BITS{1'b0}};
     reg  [CAM_DESC_Y_BITS-1:0]     cur_line_y;
 
     wire [9:0] line_in_field_pre = frame_edge ? 10'd0 : line_in_field;
-    wire       limit_drop_pre    = (line_in_field_pre >= FIELD_LINES_TARGET);
+    wire [5:0] block_in_field_pre= frame_edge ? 6'd0 : cam_block_idx;
+    wire       limit_drop_pre    = (block_in_field_pre >= BLOCKS_PER_FIELD_TARGET_6);
 
     wire [15:0] free_map_eff = free_map | (rel_new_cam ? rel_mask_cam : 16'h0000);
     wire [4:0]  free_cnt_eff5 = popcount16(free_map_eff);
@@ -335,6 +350,7 @@ module hdmi_480p_core (
             drop_this_line              <= 1'b0;
 
             line_in_field               <= 10'd0;
+            cam_block_idx               <= 6'd0;
 
             in_frame_id                 <= {CAM_DESC_FRAME_BITS{1'b0}};
             cur_line_y                  <= {CAM_DESC_Y_BITS{1'b0}};
@@ -347,6 +363,8 @@ module hdmi_480p_core (
             dbg_cam_marker_inj_cnt      <= 16'd0;
             dbg_cam_marker_drop_or_defer_cnt <= 16'd0;
             dbg_cam_desc_sent_cnt       <= 16'd0;
+            dbg_cam_block_idx_cam       <= 6'd0;
+            dbg_cam_stopped_early_cnt_cam <= 16'd0;
 
             dbg_free_cnt_cam            <= 4'd0;
             dbg_free_min_cam            <= 4'd15;
@@ -380,6 +398,13 @@ module hdmi_480p_core (
                 pending_marker       <= 1'b1;
                 dbg_cam_fieldtog_cnt <= dbg_cam_fieldtog_cnt + 16'd1;
 
+                if (cam_block_idx < BLOCKS_PER_FIELD_TARGET_6) begin
+                    if (dbg_cam_stopped_early_cnt_cam != 16'hFFFF)
+                        dbg_cam_stopped_early_cnt_cam <= dbg_cam_stopped_early_cnt_cam + 16'd1;
+                end
+
+                cam_block_idx <= 6'd0;
+
                 in_frame_id <= in_frame_id + {{(CAM_DESC_FRAME_BITS-1){1'b0}}, 1'b1};
 
                 dbg_free_min_cam <= 4'd15;
@@ -391,6 +416,12 @@ module hdmi_480p_core (
 
             if (line_start) begin
                 line_in_field <= line_in_field_pre + 10'd1;
+
+                if (block_start) begin
+                    cam_block_idx <= block_in_field_pre + 6'd1;
+                end
+
+                dbg_cam_block_idx_cam <= block_in_field_pre;
 
                 cur_line_y <= line_in_field_pre[CAM_DESC_Y_BITS-1:0];
 
@@ -467,6 +498,7 @@ module hdmi_480p_core (
             cam_desc_count  <= cam_desc_count_calc;
 
             dbg_cam_descq_cnt_cam <= cam_desc_count_calc;
+            dbg_cam_block_idx_cam <= block_in_field_pre;
         end
     end
 
