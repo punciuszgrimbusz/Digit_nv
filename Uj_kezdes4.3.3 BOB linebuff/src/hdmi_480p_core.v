@@ -602,6 +602,11 @@ module hdmi_480p_core (
     reg [DBG_BUS_W-1:0] dbg_bus_pix = {DBG_BUS_W{1'b0}};
     reg                 dbg_tog_pix = 1'b0;
 
+    reg [CAM_DESC_DATA_BITS-1:0] drop_desc;
+    reg [BUF_BITS-1:0]           drop_buf_idx;
+    reg                          drop_has_marker;
+    reg                          drop_owned;
+
     always @(posedge pix_clk or negedge resetn) begin
         if (!resetn) begin
             desc_wr_ptr   <= {DESC_BITS{1'b0}};
@@ -661,6 +666,11 @@ module hdmi_480p_core (
             out_frame_id_expected <= {CAM_DESC_FRAME_BITS{1'b0}};
             need_frame_resync     <= 1'b0;
             freeze_frame          <= 1'b0;
+
+            drop_desc       <= {CAM_DESC_DATA_BITS{1'b0}};
+            drop_buf_idx    <= {BUF_BITS{1'b0}};
+            drop_has_marker <= 1'b0;
+            drop_owned      <= 1'b0;
 
         end else begin
             // defaults
@@ -886,6 +896,11 @@ module hdmi_480p_core (
 
             // Drift correction: only adjust descriptor depth during HDMI VBLANK
             if (line_start_any && vblank && safe_for_correction) begin
+                drop_desc       = desc_fifo[desc_rd_ptr_n];
+                drop_buf_idx    = clean_buf_id(drop_desc[DESC_BUF_MSB:DESC_BUF_LSB]);
+                drop_has_marker = drop_desc[DESC_MARKER_BIT];
+                drop_owned      = pix_own_map_n[drop_buf_idx];
+
                 if (desc_count_n < LOW_WM) begin
                     if (dup_budget_n != 8'd0)
                         dup_budget_n = dup_budget_n - 8'd1;
@@ -895,32 +910,29 @@ module hdmi_480p_core (
                     dbg_last_dup_h_n = {5'd0, h_cnt};
                     uf_streak_n = 4'd0;
                 end else if ((desc_count_n != 0) && (do_drop_n || (desc_count_n > HIGH_WM))) begin
-                    rel_accum_n = rel_accum_n | onehot16(clean_buf_id(desc_fifo[desc_rd_ptr_n][DESC_BUF_MSB:DESC_BUF_LSB]));
+                    if (!drop_has_marker) begin
+                        if (drop_owned) begin
+                            rel_accum_n   = rel_accum_n | onehot16(drop_buf_idx);
+                            pix_own_map_n = pix_own_map_n & ~onehot16(drop_buf_idx);
+                        end else begin
+                            pix_fault_sticky_n[ST_REL_NOT_OWNED] = 1'b1;
+                            pix_rel_not_owned_cnt_n              = pix_rel_not_owned_cnt_n + 16'd1;
+                        end
 
-                    if (!pix_own_map_n[clean_buf_id(desc_fifo[desc_rd_ptr_n][DESC_BUF_MSB:DESC_BUF_LSB])]) begin
-                        pix_fault_sticky_n[ST_REL_NOT_OWNED] = 1'b1;
-                        pix_rel_not_owned_cnt_n              = pix_rel_not_owned_cnt_n + 16'd1;
+                        desc_rd_ptr_n = (desc_rd_ptr_n + 1'b1) & DESC_MASK;
+                        desc_count_n  = desc_count_n - 1'b1;
+                        do_drop_n     = 1'b0;
+
+                        if (dup_budget_n != 8'hFF)
+                            dup_budget_n = dup_budget_n + 8'd1;
+
+                        if (drop_used_n != 3'd7) drop_used_n = drop_used_n + 3'd1;
+                        dbg_last_drop_v_n = {6'd0, v_cnt};
+                        dbg_last_drop_h_n = {5'd0, h_cnt};
+                        uf_streak_n = 4'd0;
+                    end else begin
+                        do_drop_n = 1'b0;
                     end
-                    pix_own_map_n = pix_own_map_n & ~onehot16(clean_buf_id(desc_fifo[desc_rd_ptr_n][DESC_BUF_MSB:DESC_BUF_LSB]));
-                    rel_accum_n = rel_accum_n | onehot16(clean_buf_id(desc_fifo[desc_rd_ptr_n][BUF_BITS-1:0]));
-
-                    if (!pix_own_map_n[clean_buf_id(desc_fifo[desc_rd_ptr_n][BUF_BITS-1:0])]) begin
-                        pix_fault_sticky_n[ST_REL_NOT_OWNED] = 1'b1;
-                        pix_rel_not_owned_cnt_n              = pix_rel_not_owned_cnt_n + 16'd1;
-                    end
-                    pix_own_map_n = pix_own_map_n & ~onehot16(clean_buf_id(desc_fifo[desc_rd_ptr_n][BUF_BITS-1:0]));
-
-                    desc_rd_ptr_n = (desc_rd_ptr_n + 1'b1) & DESC_MASK;
-                    desc_count_n  = desc_count_n - 1'b1;
-                    do_drop_n     = 1'b0;
-
-                    if (dup_budget_n != 8'hFF)
-                        dup_budget_n = dup_budget_n + 8'd1;
-
-                    if (drop_used_n != 3'd7) drop_used_n = drop_used_n + 3'd1;
-                    dbg_last_drop_v_n = {6'd0, v_cnt};
-                    dbg_last_drop_h_n = {5'd0, h_cnt};
-                    uf_streak_n = 4'd0;
                 end
 
                 if (desc_count_n < desc_min_n) desc_min_n = desc_count_n;
