@@ -130,6 +130,8 @@ module top(
     wire [3:0]  dbg_free_max_cam;
     wire [15:0] dbg_alloc_fail_cnt_cam;
     wire [15:0] dbg_rel_doublefree_cnt_cam;
+    wire [15:0] rel_sent_cnt_pix_cam;
+    wire [15:0] rel_rx_cnt_cam;
 
     wire [15:0] dbg_last_drop_v_cam;
     wire [15:0] dbg_last_dup_v_cam;
@@ -222,6 +224,8 @@ module top(
         .dbg_free_max_cam           (dbg_free_max_cam),
         .dbg_alloc_fail_cnt_cam     (dbg_alloc_fail_cnt_cam),
         .dbg_rel_doublefree_cnt_cam (dbg_rel_doublefree_cnt_cam),
+        .rel_sent_cnt_pix           (rel_sent_cnt_pix_cam),
+        .rel_rx_cnt_cam             (rel_rx_cnt_cam),
 
         .dbg_last_drop_v_cam        (dbg_last_drop_v_cam),
         .dbg_last_dup_v_cam         (dbg_last_dup_v_cam),
@@ -319,7 +323,7 @@ module top(
     i2c_diag_pager #(
         .CLK_HZ  (27000000),
         .PERIODS (3),
-        .PAGES   (62)  // 0..61
+        .PAGES   (64)  // 0..63
     ) u_pager (
         .clk    (cam1_pclk),
         .resetn (cam_resetn),
@@ -366,6 +370,8 @@ module top(
         .dbg_free_max            (dbg_free_max_cam),
         .dbg_alloc_fail_cnt      (dbg_alloc_fail_cnt_cam),
         .dbg_rel_doublefree_cnt  (dbg_rel_doublefree_cnt_cam),
+        .rel_sent_cnt_pix        (rel_sent_cnt_pix_cam),
+        .rel_rx_cnt_cam          (rel_rx_cnt_cam),
 
         .dbg_cam_descq_cnt_cam   (dbg_cam_descq_cnt_cam),
         .dbg_cam_block_idx_cam   (dbg_cam_block_idx_cam),
