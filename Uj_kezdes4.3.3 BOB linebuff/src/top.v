@@ -107,8 +107,13 @@ module top(
     wire [4:0] dbg_desc_min_cam;
     wire [4:0] dbg_desc_max_cam;
 
-    wire [3:0] dbg_marker_off_cam;
+    wire [4:0] dbg_marker_off_cam;
     wire       dbg_marker_found_cam;
+
+    wire [15:0] dbg_align_pop_total_cam;
+    wire [15:0] dbg_align_hit_cnt_cam;
+    wire [15:0] dbg_marker_miss_cnt_cam;
+    wire [7:0]  dbg_marker_off_snapshot_cam;
 
     wire [15:0] dbg_cam_fieldtog_cnt_cam;
     wire [15:0] dbg_cam_marker_inj_cnt_cam;
@@ -178,6 +183,11 @@ module top(
         .dbg_desc_max_cam        (dbg_desc_max_cam),
         .dbg_marker_off_cam      (dbg_marker_off_cam),
         .dbg_marker_found_cam    (dbg_marker_found_cam),
+
+        .dbg_align_pop_total_cam   (dbg_align_pop_total_cam),
+        .dbg_align_hit_cnt_cam     (dbg_align_hit_cnt_cam),
+        .dbg_marker_miss_cnt_cam   (dbg_marker_miss_cnt_cam),
+        .dbg_marker_off_snapshot_cam (dbg_marker_off_snapshot_cam),
 
         .dbg_cam_fieldtog_cnt    (dbg_cam_fieldtog_cnt_cam),
         .dbg_cam_marker_inj_cnt  (dbg_cam_marker_inj_cnt_cam),
@@ -280,8 +290,8 @@ module top(
 
     i2c_diag_pager #(
         .CLK_HZ  (27000000),
-        .PERIODS (10),
-        .PAGES   (45)  // 0..44
+        .PERIODS (5),
+        .PAGES   (49)  // 0..48
     ) u_pager (
         .clk    (cam1_pclk),
         .resetn (cam_resetn),
@@ -303,6 +313,11 @@ module top(
 
         .dbg_marker_off      (dbg_marker_off_cam),
         .dbg_marker_found    (dbg_marker_found_cam),
+
+        .dbg_align_pop_total   (dbg_align_pop_total_cam),
+        .dbg_align_hit_cnt     (dbg_align_hit_cnt_cam),
+        .dbg_marker_miss_cnt   (dbg_marker_miss_cnt_cam),
+        .dbg_marker_off_snapshot(dbg_marker_off_snapshot_cam),
 
         .cam_field_period_lo (cam_field_period_lo),
         .cam_field_period_hi (cam_field_period_hi),
