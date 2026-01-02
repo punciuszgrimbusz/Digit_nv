@@ -259,12 +259,14 @@ module top(
         .dbg_last_resync_reason_cam (dbg_last_resync_reason_cam),
         .dbg_corr_pending_flags_cam (dbg_corr_pending_flags_cam),
 
-        .dbg_cam_descq_cnt_cam      (dbg_cam_descq_cnt_cam),
-        .dbg_cam_block_idx_cam      (dbg_cam_block_idx_cam),
-        .dbg_blocks_per_field_target_cam(dbg_blocks_per_field_target_cam),
-        .dbg_cam_stopped_early_cnt_cam(dbg_cam_stopped_early_cnt_cam),
+          .dbg_cam_descq_cnt_cam      (dbg_cam_descq_cnt_cam),
+          .dbg_cam_block_idx_cam      (dbg_cam_block_idx_cam),
+          .dbg_blocks_per_field_target_cam(dbg_blocks_per_field_target_cam),
+          .dbg_cam_stopped_early_cnt_cam(dbg_cam_stopped_early_cnt_cam),
 
-        .vsync_toggle_pix    (hdmi_vsync_toggle),
+          .cam_blocks_per_field_last  (cam_blocks_per_field_last),
+
+          .vsync_toggle_pix    (hdmi_vsync_toggle),
 
         .tmds_clk_p        (tmds_clk_p),
         .tmds_clk_n        (tmds_clk_n),
