@@ -110,6 +110,9 @@ module hdmi_480p_core (
     output reg         vsync_toggle_pix = 1'b0
 );
 
+    // Lightweight diagnostics / resource saver
+    localparam DIAG_LITE = 1;
+
     // ------------------------------------------------------------
     // 720x480p timing @ ~27 MHz
     // ------------------------------------------------------------
@@ -311,10 +314,10 @@ module hdmi_480p_core (
     wire       limit_drop_pre    = (block_in_field_pre >= BLOCKS_PER_FIELD_TARGET_6);
 
     wire [15:0] free_map_eff = free_map | (rel_new_cam ? rel_mask_cam : 16'h0000);
-    wire [4:0]  free_cnt_eff5 = popcount16(free_map_eff);
+    wire [4:0]  free_cnt_eff5 = DIAG_LITE ? 5'd0 : popcount16(free_map_eff);
 
     // debug: saturáljuk 16->15-re, mert 4 bites port
-    wire [3:0] free_cnt_eff4 = (free_cnt_eff5 >= 5'd15) ? 4'd15 : free_cnt_eff5[3:0];
+    wire [3:0] free_cnt_eff4 = DIAG_LITE ? 4'd0 : ((free_cnt_eff5 >= 5'd15) ? 4'd15 : free_cnt_eff5[3:0]);
 
     wire [15:0] rel_doublefree_bits = (rel_new_cam ? (free_map & rel_mask_cam) : 16'h0000);
 
@@ -713,7 +716,8 @@ module hdmi_480p_core (
     reg [4:0] marker_off_r, marker_off_r_n;
     reg [7:0] dbg_marker_off_snapshot, dbg_marker_off_snapshot_n;
 
-    localparam integer MAX_ALIGN_POP = 31;
+    localparam integer MAX_ALIGN_POP   = 31;
+    localparam integer MARKER_SCAN_MAX = 8;
     reg [4:0]  align_budget, align_budget_n;
     reg        align_active, align_active_n;
     reg [15:0] dbg_align_pop_total, dbg_align_pop_total_n;
@@ -734,7 +738,7 @@ module hdmi_480p_core (
         marker_off_pix   = 5'd0;
         midx             = desc_rd_ptr;
 
-        for (mi = 0; mi < DESC_DEPTH; mi = mi + 1) begin
+        for (mi = 0; mi < MARKER_SCAN_MAX; mi = mi + 1) begin
             if (!marker_found_pix && (mi < desc_count)) begin
                 midx = (desc_rd_ptr + mi[DESC_BITS-1:0]) & DESC_MASK;
                 if (desc_fifo[midx][DESC_MARKER_BIT]) begin
@@ -775,6 +779,31 @@ module hdmi_480p_core (
     localparam integer DBG_BUS_W = 584;
 
     reg [DBG_BUS_W-1:0] dbg_bus_pix = {DBG_BUS_W{1'b0}};
+
+    // Optional diagnostics masked when DIAG_LITE is asserted
+    wire [15:0] dbg_hdmi_frame_repeat_dbg   = DIAG_LITE ? 16'd0 : hdmi_frame_repeat_cnt_n;
+    wire [15:0] dbg_fill_lines_dbg          = DIAG_LITE ? 16'd0 : fill_lines_cnt_n;
+    wire [15:0] dbg_blocks_left_snapshot_dbg= DIAG_LITE ? 16'd0 : blocks_left_snapshot_n;
+    wire [15:0] dbg_marker_at_head_dbg      = DIAG_LITE ? 16'd0 : {15'd0, marker_at_head_n};
+    wire [15:0] dbg_field_start_ok_dbg      = DIAG_LITE ? 16'd0 : field_start_ok_cnt_n;
+    wire [15:0] dbg_rel_sent_cnt_dbg        = DIAG_LITE ? 16'd0 : rel_sent_cnt_pix_int_n;
+    wire [15:0] dbg_pop_lines_cnt_dbg       = DIAG_LITE ? 16'd0 : pop_lines_cnt_n;
+    wire [15:0] dbg_hold_lines_cnt_dbg      = DIAG_LITE ? 16'd0 : hold_lines_cnt_n;
+    wire [15:0] dbg_hold_stuck_abort_dbg    = DIAG_LITE ? 16'd0 : hold_stuck_abort_cnt_n;
+    wire [15:0] dbg_desc_count_now_dbg      = DIAG_LITE ? 16'd0 : desc_count_now_n;
+    wire [15:0] dbg_desc_err_now_dbg        = DIAG_LITE ? 16'd0 : desc_err_now_n;
+    wire [15:0] dbg_marker_distance_dbg     = DIAG_LITE ? 16'hFFFF : marker_distance_n;
+    wire [15:0] dbg_last_resync_reason_dbg  = DIAG_LITE ? 16'd0 : last_resync_reason_n;
+    wire [15:0] dbg_corr_pending_flags_dbg  = DIAG_LITE ? 16'd0 : corr_pending_flags_n;
+    wire [15:0] dbg_align_pop_total_dbg     = DIAG_LITE ? 16'd0 : dbg_align_pop_total_n;
+    wire [15:0] dbg_align_hit_cnt_dbg       = DIAG_LITE ? 16'd0 : dbg_align_hit_cnt_n;
+    wire [15:0] dbg_marker_miss_cnt_dbg     = DIAG_LITE ? 16'd0 : dbg_marker_miss_cnt_n;
+    wire [15:0] dbg_marker_off_snapshot_dbg = DIAG_LITE ? 16'd0 : {8'd0, dbg_marker_off_snapshot_n};
+    wire [15:0] dbg_soft_drop_lines_dbg     = DIAG_LITE ? 16'd0 : soft_drop_lines_cnt_n;
+    wire [15:0] dbg_soft_dup_lines_dbg      = DIAG_LITE ? 16'd0 : soft_dup_lines_cnt_n;
+    wire [15:0] dbg_hard_resync_cnt_dbg     = DIAG_LITE ? 16'd0 : hard_resync_cnt_n;
+    wire [15:0] dbg_last_soft_corr_v_dbg    = DIAG_LITE ? 16'd0 : last_soft_corr_v_n;
+    wire [15:0] dbg_corr_skip_marker_dbg    = DIAG_LITE ? 16'd0 : corr_skip_marker_cnt_n;
     reg                 dbg_tog_pix = 1'b0;
 
     reg [CAM_DESC_DATA_BITS-1:0] drop_desc;
@@ -1414,31 +1443,31 @@ module hdmi_480p_core (
 
             if (frame_start) begin
                 dbg_bus_pix <= {
-                    hdmi_frame_repeat_cnt_n,     // [583:568]
-                    fill_lines_cnt_n,            // [567:552]
-                    blocks_left_snapshot_n,      // [551:536]
-                    {15'd0, marker_at_head_n},   // [535:520]
-                    field_start_ok_cnt_n,        // [519:504]
-                    rel_sent_cnt_pix_int_n,     // [503:488]
-                    pop_lines_cnt_n,            // [487:472]
-                    hold_lines_cnt_n,           // [471:456]
-                    hold_stuck_abort_cnt_n,     // [455:440]
-                    desc_count_now_n,           // [439:424]
-                    desc_err_now_n,             // [423:408]
-                    marker_distance_n,          // [407:392]
-                    last_resync_reason_n,       // [391:376]
-                    corr_pending_flags_n,       // [375:360]
+                    dbg_hdmi_frame_repeat_dbg,   // [583:568]
+                    dbg_fill_lines_dbg,          // [567:552]
+                    dbg_blocks_left_snapshot_dbg,// [551:536]
+                    dbg_marker_at_head_dbg,      // [535:520]
+                    dbg_field_start_ok_dbg,      // [519:504]
+                    dbg_rel_sent_cnt_dbg,        // [503:488]
+                    dbg_pop_lines_cnt_dbg,       // [487:472]
+                    dbg_hold_lines_cnt_dbg,      // [471:456]
+                    dbg_hold_stuck_abort_dbg,    // [455:440]
+                    dbg_desc_count_now_dbg,      // [439:424]
+                    dbg_desc_err_now_dbg,        // [423:408]
+                    dbg_marker_distance_dbg,     // [407:392]
+                    dbg_last_resync_reason_dbg,  // [391:376]
+                    dbg_corr_pending_flags_dbg,  // [375:360]
 
-                    dbg_align_pop_total_n,       // [359:344]
-                    dbg_align_hit_cnt_n,         // [343:328]
-                    dbg_marker_miss_cnt_n,       // [327:312]
-                    dbg_marker_off_snapshot_n,   // [311:304]
+                    dbg_align_pop_total_dbg,     // [359:344]
+                    dbg_align_hit_cnt_dbg,       // [343:328]
+                    dbg_marker_miss_cnt_dbg,     // [327:312]
+                    dbg_marker_off_snapshot_dbg, // [311:304]
 
-                    soft_drop_lines_cnt_n,      // [303:288]
-                    soft_dup_lines_cnt_n,       // [287:272]
-                    hard_resync_cnt_n,          // [271:256]
-                    last_soft_corr_v_n,         // [255:240]
-                    corr_skip_marker_cnt_n,     // [239:224]
+                    dbg_soft_drop_lines_dbg,     // [303:288]
+                    dbg_soft_dup_lines_dbg,      // [287:272]
+                    dbg_hard_resync_cnt_dbg,     // [271:256]
+                    dbg_last_soft_corr_v_dbg,    // [255:240]
+                    dbg_corr_skip_marker_dbg,    // [239:224]
 
                     dbg_last_drop_v_n,           // [223:208]
                     dbg_last_dup_v_n,            // [207:192]

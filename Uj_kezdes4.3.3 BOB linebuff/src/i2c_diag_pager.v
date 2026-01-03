@@ -167,6 +167,9 @@ module i2c_diag_pager #(
     output reg [15:0]  out_value  = 16'd0
 );
 
+    localparam DIAG_LITE = 1;
+    localparam integer PAGES_EFF = DIAG_LITE ? 40 : PAGES;
+
     localparam integer PERIOD = (CLK_HZ / PERIODS);
     localparam [9:0]   LPF_INVALID = 10'h3FF; // 1023
 
@@ -223,96 +226,155 @@ module i2c_diag_pager #(
 
     wire field_event = (dbg_cam_fieldtog_cnt != prev_fieldtog_cnt);
 
-    always @* begin
-        value_mux = 16'h0000;
-        case (page)
-            8'd0:  value_mux = {6'd0, raw_lines_per_field};
-            8'd1:  value_mux = {11'd0, dbg_desc_count};
-            8'd2:  value_mux = {6'd0, dbg_underflow_low10};
-            8'd3:  value_mux = {6'd0, dbg_overflow_low10};
-            8'd4:  value_mux = {13'd0, dbg_drop_used};
-            8'd5:  value_mux = {13'd0, dbg_dup_used};
-            8'd6:  value_mux = {15'd0, dbg_resync_used};
-            8'd7:  value_mux = {11'd0, dbg_desc_min};
-            8'd8:  value_mux = {11'd0, dbg_desc_max};
-            8'd9:  value_mux = {10'd0, dbg_marker_found, dbg_marker_off};
+    generate
+        if (DIAG_LITE) begin : g_diag_lite
+            always @* begin
+                value_mux = 16'h0000;
+                case (page)
+                    8'd0:  value_mux = {6'd0, raw_lines_per_field};
+                    8'd1:  value_mux = {11'd0, dbg_desc_count};
+                    8'd2:  value_mux = {6'd0, dbg_underflow_low10};
+                    8'd3:  value_mux = {6'd0, dbg_overflow_low10};
+                    8'd4:  value_mux = {13'd0, dbg_drop_used};
+                    8'd5:  value_mux = {13'd0, dbg_dup_used};
+                    8'd6:  value_mux = {15'd0, dbg_resync_used};
+                    8'd7:  value_mux = {11'd0, dbg_desc_min};
+                    8'd8:  value_mux = {11'd0, dbg_desc_max};
+                    8'd9:  value_mux = {10'd0, dbg_marker_found, dbg_marker_off};
 
-            8'd10: value_mux = cam_field_period_lo;
-            8'd11: value_mux = cam_field_period_hi;
+                    8'd10: value_mux = cam_field_period_lo;
+                    8'd11: value_mux = cam_field_period_hi;
 
-            8'd12: value_mux = dbg_cam_fieldtog_cnt;
-            8'd13: value_mux = dbg_cam_marker_inj_cnt;
-            8'd14: value_mux = dbg_cam_desc_sent_cnt;
+                    8'd12: value_mux = dbg_cam_fieldtog_cnt;
+                    8'd13: value_mux = dbg_cam_marker_inj_cnt;
+                    8'd14: value_mux = dbg_cam_desc_sent_cnt;
 
-            8'd15: value_mux = {6'd0, lines_per_field_est};
+                    8'd15: value_mux = {6'd0, lines_per_field_est};
 
-            8'd16: value_mux = dbg_fault_sticky;
-            8'd17: value_mux = {8'd0, dbg_own_map};
-            8'd18: value_mux = dbg_rx_dupbuf_cnt;
-            8'd19: value_mux = dbg_rel_not_owned_cnt;
-            8'd20: value_mux = {8'd0, dbg_overflow_rel_lo8};
+                    8'd16: value_mux = dbg_fault_sticky;
+                    8'd17: value_mux = {8'd0, dbg_own_map};
+                    8'd18: value_mux = dbg_rx_dupbuf_cnt;
+                    8'd19: value_mux = dbg_rel_not_owned_cnt;
+                    8'd20: value_mux = {8'd0, dbg_overflow_rel_lo8};
 
-            8'd21: value_mux = {12'd0, dbg_free_cnt};
-            8'd22: value_mux = {12'd0, dbg_free_min};
-            8'd23: value_mux = {12'd0, dbg_free_max};
-            8'd24: value_mux = dbg_alloc_fail_cnt;
-            8'd25: value_mux = dbg_rel_doublefree_cnt;
+                    8'd21: value_mux = {12'd0, dbg_free_cnt};
+                    8'd22: value_mux = {12'd0, dbg_free_min};
+                    8'd23: value_mux = {12'd0, dbg_free_max};
+                    8'd24: value_mux = dbg_alloc_fail_cnt;
+                    8'd25: value_mux = dbg_rel_doublefree_cnt;
 
-            8'd26: value_mux = {{8{desc_delta_lat[7]}}, desc_delta_lat};
-            8'd27: value_mux = {{8{free_delta_lat[7]}}, free_delta_lat};
-            8'd28: value_mux = {6'd0, uf_delta_lat};
-            8'd29: value_mux = {6'd0, of_delta_lat};
-            8'd30: value_mux = drop_accum;
-            8'd31: value_mux = dup_accum;
-            8'd32: value_mux = resync_accum;
+                    8'd26: value_mux = {{8{desc_delta_lat[7]}}, desc_delta_lat};
+                    8'd27: value_mux = {{8{free_delta_lat[7]}}, free_delta_lat};
+                    8'd28: value_mux = {6'd0, uf_delta_lat};
+                    8'd29: value_mux = {6'd0, of_delta_lat};
+                    8'd30: value_mux = drop_accum;
+                    8'd31: value_mux = dup_accum;
+                    8'd32: value_mux = resync_accum;
 
-            8'd33: value_mux = {10'd0, dbg_cam_descq_cnt_cam};
+                    8'd33: value_mux = {10'd0, dbg_cam_descq_cnt_cam};
+                    8'd34: value_mux = dbg_last_drop_v;
+                    8'd35: value_mux = dbg_last_dup_v;
+                    8'd36: value_mux = in_sof_cnt16;
+                    8'd37: value_mux = out_vsync_cnt16;
+                    8'd38: value_mux = sof_delta16;
+                    8'd39: value_mux = lock_status16;
 
-            8'd34: value_mux = dbg_last_drop_v;
-            8'd35: value_mux = dbg_last_dup_v;
-            8'd36: value_mux = in_sof_cnt16;
-            8'd37: value_mux = out_vsync_cnt16;
-            8'd38: value_mux = sof_delta16;
-            8'd39: value_mux = lock_status16;
+                    default: value_mux = 16'h0000;
+                endcase
+            end
+        end else begin : g_diag_full
+            always @* begin
+                value_mux = 16'h0000;
+                case (page)
+                    8'd0:  value_mux = {6'd0, raw_lines_per_field};
+                    8'd1:  value_mux = {11'd0, dbg_desc_count};
+                    8'd2:  value_mux = {6'd0, dbg_underflow_low10};
+                    8'd3:  value_mux = {6'd0, dbg_overflow_low10};
+                    8'd4:  value_mux = {13'd0, dbg_drop_used};
+                    8'd5:  value_mux = {13'd0, dbg_dup_used};
+                    8'd6:  value_mux = {15'd0, dbg_resync_used};
+                    8'd7:  value_mux = {11'd0, dbg_desc_min};
+                    8'd8:  value_mux = {11'd0, dbg_desc_max};
+                    8'd9:  value_mux = {10'd0, dbg_marker_found, dbg_marker_off};
 
-            8'd40: value_mux = dbg_soft_drop_lines_cnt;
-            8'd41: value_mux = dbg_soft_dup_lines_cnt;
-            8'd42: value_mux = dbg_hard_resync_cnt;
-            8'd43: value_mux = dbg_last_soft_corr_v;
-            8'd44: value_mux = dbg_corr_skip_marker_cnt;
+                    8'd10: value_mux = cam_field_period_lo;
+                    8'd11: value_mux = cam_field_period_hi;
 
-            8'd45: value_mux = dbg_align_pop_total;
-            8'd46: value_mux = dbg_align_hit_cnt;
-            8'd47: value_mux = dbg_marker_miss_cnt;
-            8'd48: value_mux = {8'd0, dbg_marker_off_snapshot};
+                    8'd12: value_mux = dbg_cam_fieldtog_cnt;
+                    8'd13: value_mux = dbg_cam_marker_inj_cnt;
+                    8'd14: value_mux = dbg_cam_desc_sent_cnt;
 
-            8'd49: value_mux = dbg_desc_count_now;
-            8'd50: value_mux = dbg_desc_err_now;
-            8'd51: value_mux = dbg_marker_distance;
-            8'd52: value_mux = dbg_last_resync_reason;
-            8'd53: value_mux = dbg_last_soft_corr_v;
-            8'd54: value_mux = dbg_corr_pending_flags;
+                    8'd15: value_mux = {6'd0, lines_per_field_est};
 
-            8'd55: value_mux = rel_sent_cnt_pix;
-            8'd56: value_mux = rel_rx_cnt_cam;
-            8'd57: value_mux = dbg_pop_lines_cnt;
-            8'd58: value_mux = dbg_hold_lines_cnt;
-            8'd59: value_mux = dbg_hold_stuck_abort_cnt;
-            8'd60: value_mux = dbg_cam_marker_drop_or_defer_cnt;
+                    8'd16: value_mux = dbg_fault_sticky;
+                    8'd17: value_mux = {8'd0, dbg_own_map};
+                    8'd18: value_mux = dbg_rx_dupbuf_cnt;
+                    8'd19: value_mux = dbg_rel_not_owned_cnt;
+                    8'd20: value_mux = {8'd0, dbg_overflow_rel_lo8};
 
-            8'd61: value_mux = {10'd0, dbg_cam_block_idx_cam};
-            8'd62: value_mux = {10'd0, dbg_blocks_per_field_target_cam};
-            8'd63: value_mux = dbg_cam_stopped_early_cnt_cam;
-            8'd64: value_mux = hdmi_frame_repeat_cnt;
-            8'd65: value_mux = fill_lines_cnt;
-            8'd66: value_mux = blocks_left_snapshot;
-            8'd67: value_mux = cam_blocks_per_field_last;
-            8'd68: value_mux = marker_at_head;
-            8'd69: value_mux = field_start_ok_cnt;
+                    8'd21: value_mux = {12'd0, dbg_free_cnt};
+                    8'd22: value_mux = {12'd0, dbg_free_min};
+                    8'd23: value_mux = {12'd0, dbg_free_max};
+                    8'd24: value_mux = dbg_alloc_fail_cnt;
+                    8'd25: value_mux = dbg_rel_doublefree_cnt;
 
-            default: value_mux = 16'h0000;
-        endcase
-    end
+                    8'd26: value_mux = {{8{desc_delta_lat[7]}}, desc_delta_lat};
+                    8'd27: value_mux = {{8{free_delta_lat[7]}}, free_delta_lat};
+                    8'd28: value_mux = {6'd0, uf_delta_lat};
+                    8'd29: value_mux = {6'd0, of_delta_lat};
+                    8'd30: value_mux = drop_accum;
+                    8'd31: value_mux = dup_accum;
+                    8'd32: value_mux = resync_accum;
+
+                    8'd33: value_mux = {10'd0, dbg_cam_descq_cnt_cam};
+
+                    8'd34: value_mux = dbg_last_drop_v;
+                    8'd35: value_mux = dbg_last_dup_v;
+                    8'd36: value_mux = in_sof_cnt16;
+                    8'd37: value_mux = out_vsync_cnt16;
+                    8'd38: value_mux = sof_delta16;
+                    8'd39: value_mux = lock_status16;
+
+                    8'd40: value_mux = dbg_soft_drop_lines_cnt;
+                    8'd41: value_mux = dbg_soft_dup_lines_cnt;
+                    8'd42: value_mux = dbg_hard_resync_cnt;
+                    8'd43: value_mux = dbg_last_soft_corr_v;
+                    8'd44: value_mux = dbg_corr_skip_marker_cnt;
+
+                    8'd45: value_mux = dbg_align_pop_total;
+                    8'd46: value_mux = dbg_align_hit_cnt;
+                    8'd47: value_mux = dbg_marker_miss_cnt;
+                    8'd48: value_mux = {8'd0, dbg_marker_off_snapshot};
+
+                    8'd49: value_mux = dbg_desc_count_now;
+                    8'd50: value_mux = dbg_desc_err_now;
+                    8'd51: value_mux = dbg_marker_distance;
+                    8'd52: value_mux = dbg_last_resync_reason;
+                    8'd53: value_mux = dbg_last_soft_corr_v;
+                    8'd54: value_mux = dbg_corr_pending_flags;
+
+                    8'd55: value_mux = rel_sent_cnt_pix;
+                    8'd56: value_mux = rel_rx_cnt_cam;
+                    8'd57: value_mux = dbg_pop_lines_cnt;
+                    8'd58: value_mux = dbg_hold_lines_cnt;
+                    8'd59: value_mux = dbg_hold_stuck_abort_cnt;
+                    8'd60: value_mux = dbg_cam_marker_drop_or_defer_cnt;
+
+                    8'd61: value_mux = {10'd0, dbg_cam_block_idx_cam};
+                    8'd62: value_mux = {10'd0, dbg_blocks_per_field_target_cam};
+                    8'd63: value_mux = dbg_cam_stopped_early_cnt_cam;
+                    8'd64: value_mux = hdmi_frame_repeat_cnt;
+                    8'd65: value_mux = fill_lines_cnt;
+                    8'd66: value_mux = blocks_left_snapshot;
+                    8'd67: value_mux = cam_blocks_per_field_last;
+                    8'd68: value_mux = marker_at_head;
+                    8'd69: value_mux = field_start_ok_cnt;
+
+                    default: value_mux = 16'h0000;
+                endcase
+            end
+        end
+    endgenerate
 
     always @(posedge clk or negedge resetn) begin
         if (!resetn) begin
@@ -425,7 +487,7 @@ module i2c_diag_pager #(
                         end
                     end
 
-                    if (page == (PAGES-1)) begin
+                    if (page == (PAGES_EFF-1)) begin
                         drop_accum         <= drop_accum_work;
                         dup_accum          <= dup_accum_work;
                         resync_accum       <= resync_accum_work;
