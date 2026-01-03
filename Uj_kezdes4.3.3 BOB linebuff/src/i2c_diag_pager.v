@@ -20,8 +20,8 @@
 15 lines_per_field_est – becsült sor/field = (desc_sent_delta / fieldtog_delta)
 16 dbg_fault_sticky – sticky fault bitek (RX_DUPBUF / REL_NOT_OWNED / REL_HITS_CUR / DESC_OVERFLOW / SEEK_EMPTY)
 17 dbg_own_map – PIX oldali buffer ownership bitmap (melyik 0..7 buf “owned”)
-18 dbg_rx_dupbuf_cnt – hányszor jött olyan buf descriptorban, ami már owned volt
-19 dbg_rel_not_owned_cnt – hányszor release-elt nem-owned bufot
+18 dbg_cam_desc_push_cnt – hányszor jött át CAM→PIX descriptor (CDC WR)
+19 dbg_pix_desc_pop_cnt – hányszor popolt a PIX descriptor FIFO
 20 dbg_overflow_rel_lo8 – overflow miatti azonnali release-ek számlálója (low8)
 21 dbg_free_cnt – CAM free buffer darabszám (0..8) line_start pillanatban
 22 dbg_free_min – free_cnt minimum az adott fieldben
@@ -115,8 +115,8 @@ module i2c_diag_pager #(
     // pages 16..25
     input  wire [15:0] dbg_fault_sticky,       // page16
     input  wire [7:0]  dbg_own_map,            // page17 (low8)
-    input  wire [15:0] dbg_rx_dupbuf_cnt,      // page18
-    input  wire [15:0] dbg_rel_not_owned_cnt,  // page19
+    input  wire [15:0] dbg_cam_desc_push_cnt,  // page18
+    input  wire [15:0] dbg_pix_desc_pop_cnt,   // page19
     input  wire [7:0]  dbg_overflow_rel_lo8,   // page20 (low8)
 
     input  wire [3:0]  dbg_free_cnt,           // page21 (low4)
@@ -254,8 +254,8 @@ module i2c_diag_pager #(
 
                     8'd16: value_mux = dbg_fault_sticky;
                     8'd17: value_mux = {8'd0, dbg_own_map};
-                    8'd18: value_mux = dbg_rx_dupbuf_cnt;
-                    8'd19: value_mux = dbg_rel_not_owned_cnt;
+                    8'd18: value_mux = dbg_cam_desc_push_cnt;
+                    8'd19: value_mux = dbg_pix_desc_pop_cnt;
                     8'd20: value_mux = {8'd0, dbg_overflow_rel_lo8};
 
                     8'd21: value_mux = {12'd0, dbg_free_cnt};
@@ -309,8 +309,8 @@ module i2c_diag_pager #(
 
                     8'd16: value_mux = dbg_fault_sticky;
                     8'd17: value_mux = {8'd0, dbg_own_map};
-                    8'd18: value_mux = dbg_rx_dupbuf_cnt;
-                    8'd19: value_mux = dbg_rel_not_owned_cnt;
+                    8'd18: value_mux = dbg_cam_desc_push_cnt;
+                    8'd19: value_mux = dbg_pix_desc_pop_cnt;
                     8'd20: value_mux = {8'd0, dbg_overflow_rel_lo8};
 
                     8'd21: value_mux = {12'd0, dbg_free_cnt};
