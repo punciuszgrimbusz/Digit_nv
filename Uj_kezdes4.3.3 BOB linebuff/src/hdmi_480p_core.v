@@ -1819,7 +1819,7 @@ module hdmi_480p_core (
     reg       de_seen_line;
     reg [15:0] de_line_cnt_work;
     reg [15:0] de_line_cnt_pix;
-    reg       vsync_d;
+    // vsync_d is shared with the main pixel-domain logic above
 
     always @(posedge pix_clk or negedge resetn) begin
         if (!resetn) begin
@@ -1827,10 +1827,7 @@ module hdmi_480p_core (
             de_seen_line <= 1'b0;
             de_line_cnt_work <= 16'd0;
             de_line_cnt_pix <= 16'd0;
-            vsync_d <= 1'b1;
         end else begin
-            vsync_d <= vsync;
-
             if (line_start_any) begin
                 if (de_seen_line && (de_line_cnt_work != 16'hFFFF))
                     de_line_cnt_work <= de_line_cnt_work + 16'd1;
