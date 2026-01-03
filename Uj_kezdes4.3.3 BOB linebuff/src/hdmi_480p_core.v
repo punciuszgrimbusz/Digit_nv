@@ -725,6 +725,7 @@ module hdmi_480p_core (
     integer ri;
     integer si;
     reg [DESC_BITS-1:0] midx;
+    reg [DESC_BITS-1:0] midx_startup;
     reg force_repeat_line;
     reg startup_resync_now;
 
@@ -1140,11 +1141,12 @@ module hdmi_480p_core (
                 marker_miss_streak_n   = 4'd0;
 
                 startup_rel_mask = 16'h0000;
+                midx_startup     = desc_rd_ptr_n;
                 if (marker_off_pix != 5'd0) begin
                     for (si = 0; si < MAX_ALIGN_POP; si = si + 1) begin
                         if (si < marker_off_pix) begin
-                            midx = (desc_rd_ptr_n + si[DESC_BITS-1:0]) & DESC_MASK;
-                            startup_rel_buf = clean_buf_id(desc_fifo[midx][DESC_BUF_MSB:DESC_BUF_LSB]);
+                            midx_startup = (desc_rd_ptr_n + si[DESC_BITS-1:0]) & DESC_MASK;
+                            startup_rel_buf = clean_buf_id(desc_fifo[midx_startup][DESC_BUF_MSB:DESC_BUF_LSB]);
                             if (!pix_own_map_n[startup_rel_buf]) begin
                                 pix_fault_sticky_n[ST_REL_NOT_OWNED] = 1'b1;
                                 if (pix_rel_not_owned_cnt_n != 16'hFFFF)
