@@ -162,6 +162,7 @@ module top(
     wire [15:0] blocks_left_snapshot_cam;
     wire [15:0] marker_at_head_cam;
     wire [15:0] field_start_ok_cnt_cam;
+    wire        lock_latched_cam;
 
     wire [5:0] dbg_cam_descq_cnt_cam;
     wire [5:0] dbg_cam_block_idx_cam;
@@ -178,11 +179,12 @@ module top(
     reg         lock_lost_latched      = 1'b0;
     reg         resync_event_latched   = 1'b0;
     reg         frame_miss_event_latched = 1'b0;
+    reg         lock_latched_cam_d     = 1'b0;
     reg  [2:0]  vsync_tsync             = 3'b000;
     reg         cam_field_toggle_d      = 1'b0;
 
     wire        vsync_edge_cam = vsync_tsync[2] ^ vsync_tsync[1];
-    wire [15:0] lock_status16  = {12'd0, frame_miss_event_latched, resync_event_latched, lock_lost_latched, dbg_marker_found_cam};
+    wire [15:0] lock_status16  = {11'd0, lock_lost_latched, frame_miss_event_latched, resync_event_latched, lock_latched_cam, dbg_marker_found_cam};
 
     hdmi_480p_core u_hdmi (
         .pix_clk          (pix_clk),
@@ -222,6 +224,7 @@ module top(
         .blocks_left_snapshot_cam  (blocks_left_snapshot_cam),
         .marker_at_head_cam        (marker_at_head_cam),
         .field_start_ok_cnt_cam    (field_start_ok_cnt_cam),
+        .lock_latched_cam          (lock_latched_cam),
 
         .dbg_pop_lines_cnt_cam       (dbg_pop_lines_cnt_cam),
         .dbg_hold_lines_cnt_cam      (dbg_hold_lines_cnt_cam),
@@ -304,9 +307,11 @@ module top(
             lock_lost_latched       <= 1'b0;
             resync_event_latched    <= 1'b0;
             frame_miss_event_latched<= 1'b0;
+            lock_latched_cam_d      <= 1'b0;
         end else begin
             vsync_tsync        <= {vsync_tsync[1:0], hdmi_vsync_toggle};
             cam_field_toggle_d <= cam_field_toggle;
+            lock_latched_cam_d <= lock_latched_cam;
 
             if (cam_field_toggle != cam_field_toggle_d)
                 in_sof_cnt16 <= in_sof_cnt16 + 16'd1;
@@ -318,14 +323,22 @@ module top(
                 frame_miss_event_latched <= 1'b0;
             end
 
-            if (!dbg_marker_found_cam)
-                lock_lost_latched <= 1'b1;
+            if (lock_latched_cam && !lock_latched_cam_d) begin
+                lock_lost_latched        <= 1'b0;
+                resync_event_latched     <= 1'b0;
+                frame_miss_event_latched <= 1'b0;
+            end
 
-            if (dbg_resync_used_cam)
-                resync_event_latched <= 1'b1;
+            if (!(lock_latched_cam && !lock_latched_cam_d)) begin
+                if (!dbg_marker_found_cam)
+                    lock_lost_latched <= 1'b1;
 
-            if (in_sof_cnt16 != out_vsync_cnt16)
-                frame_miss_event_latched <= 1'b1;
+                if (dbg_resync_used_cam)
+                    resync_event_latched <= 1'b1;
+
+                if (in_sof_cnt16 != out_vsync_cnt16)
+                    frame_miss_event_latched <= 1'b1;
+            end
         end
     end
 
