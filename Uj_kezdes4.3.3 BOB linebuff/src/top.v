@@ -152,6 +152,9 @@ module top(
     wire [15:0] dbg_last_resync_reason_cam;
     wire [15:0] dbg_corr_pending_flags_cam;
 
+    wire [15:0] dbg_pix_desc_pop_cnt_cam;
+    wire [15:0] dbg_cam_desc_push_cnt_cam;
+
     wire [15:0] dbg_pop_lines_cnt_cam;
     wire [15:0] dbg_hold_lines_cnt_cam;
     wire [15:0] dbg_hold_stuck_abort_cnt_cam;
@@ -263,6 +266,9 @@ module top(
         .dbg_marker_distance_cam    (dbg_marker_distance_cam),
         .dbg_last_resync_reason_cam (dbg_last_resync_reason_cam),
         .dbg_corr_pending_flags_cam (dbg_corr_pending_flags_cam),
+
+        .dbg_pix_desc_pop_cnt_cam   (dbg_pix_desc_pop_cnt_cam),
+        .dbg_cam_desc_push_cnt_cam  (dbg_cam_desc_push_cnt_cam),
 
           .dbg_cam_descq_cnt_cam      (dbg_cam_descq_cnt_cam),
           .dbg_cam_block_idx_cam      (dbg_cam_block_idx_cam),
@@ -392,8 +398,8 @@ module top(
 
         .dbg_fault_sticky        (dbg_fault_sticky_cam),
         .dbg_own_map             (dbg_own_map_cam),
-        .dbg_rx_dupbuf_cnt       (dbg_rx_dupbuf_cnt_cam),
-        .dbg_rel_not_owned_cnt   (dbg_rel_not_owned_cnt_cam),
+        .dbg_cam_desc_push_cnt   (dbg_cam_desc_push_cnt_cam),
+        .dbg_pix_desc_pop_cnt    (dbg_pix_desc_pop_cnt_cam),
         .dbg_overflow_rel_lo8    (dbg_overflow_rel_lo8_cam),
 
         .dbg_free_cnt            (dbg_free_cnt_cam),
