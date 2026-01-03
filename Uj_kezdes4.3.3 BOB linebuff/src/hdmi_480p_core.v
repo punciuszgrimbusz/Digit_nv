@@ -298,6 +298,8 @@ module hdmi_480p_core (
 
     reg [BUF_BITS-1:0] wr_buf_idx;
     reg [9:0]          wr_addr;
+    reg [BUF_BITS-1:0] cam_last_buf_idx;
+    reg [CAM_DESC_DATA_BITS-1:0] cam_last_desc_data;
 
     wire block_start = line_start && (line_in_field_pre[2:0] == 3'b000);
 
@@ -309,6 +311,18 @@ module hdmi_480p_core (
     reg pending_marker;
 
     reg drop_this_line;
+    reg alloc_fail_hold;
+
+    reg [9:0] alloc_fail_streak;
+    reg       pool_soft_reset_tog_cam;
+    reg       pool_soft_reset_pulse_cam;
+
+    reg       pool_soft_reset_sync1_pix;
+    reg       pool_soft_reset_sync2_pix;
+    reg       pool_soft_reset_sync3_pix;
+    wire      pool_soft_reset_pix = pool_soft_reset_sync2_pix ^ pool_soft_reset_sync3_pix;
+
+    localparam integer ALLOC_FAIL_WDOG_THRESH = 10'd512;
 
     wire frame_edge = cam_frame_toggle ^ cam_frame_toggle_d;
 
@@ -346,6 +360,7 @@ module hdmi_480p_core (
     reg push_req;
     reg can_push;
     reg [3:0] free_cnt_eff4;
+    reg [CAM_DESC_DATA_BITS-1:0] cam_desc_word;
 
     always @(posedge cam_pclk or negedge cam_resetn) begin
         if (!cam_resetn) begin
@@ -360,12 +375,19 @@ module hdmi_480p_core (
 
             wr_buf_idx                  <= 4'd0;
             wr_addr                     <= 10'd0;
+            cam_last_buf_idx            <= 4'd0;
+            cam_last_desc_data          <= {CAM_DESC_DATA_BITS{1'b0}};
             cam_line_valid_d            <= 1'b0;
             cam_frame_toggle_d          <= 1'b0;
             frame_flag_next_line        <= 1'b0;
             cur_line_is_frame_start_cam <= 1'b0;
             pending_marker              <= 1'b0;
             drop_this_line              <= 1'b0;
+            alloc_fail_hold             <= 1'b0;
+
+            alloc_fail_streak           <= 10'd0;
+            pool_soft_reset_tog_cam     <= 1'b0;
+            pool_soft_reset_pulse_cam   <= 1'b0;
 
             line_in_field               <= 10'd0;
             cam_block_idx               <= 6'd0;
@@ -403,6 +425,13 @@ module hdmi_480p_core (
             lock_latched_cam_d <= lock_latched_cam;
 
             init_free_pool = !lock_latched_cam_d && lock_latched_cam;
+            pool_soft_reset_pulse_cam <= 1'b0;
+
+            if (alloc_fail_streak >= ALLOC_FAIL_WDOG_THRESH) begin
+                pool_soft_reset_tog_cam   <= ~pool_soft_reset_tog_cam;
+                pool_soft_reset_pulse_cam <= 1'b1;
+                alloc_fail_streak        <= 10'd0;
+            end
 
             // ---- init calc ----
             for (fi = 0; fi < NUM_BUFS; fi = fi + 1) begin
@@ -416,6 +445,9 @@ module hdmi_480p_core (
             cam_desc_rd_ptr_calc = cam_desc_rd_ptr;
             cam_desc_count_calc  = cam_desc_count;
 
+            if (pool_soft_reset_pulse_cam)
+                init_free_pool = 1'b1;
+
             if (init_free_pool) begin
                 free_rd_ptr_calc = {BUF_BITS{1'b0}};
                 free_wr_ptr_calc = NUM_BUFS[BUF_BITS-1:0];
@@ -424,10 +456,16 @@ module hdmi_480p_core (
                     free_fifo_calc[fi] = fi[BUF_BITS-1:0];
                 end
                 cam_own_map_calc        = 16'h0000;
+                cam_desc_wr_ptr_calc    = {CAM_DESC_PTR_BITS{1'b0}};
+                cam_desc_rd_ptr_calc    = {CAM_DESC_PTR_BITS{1'b0}};
+                cam_desc_count_calc     = 6'd0;
                 dbg_alloc_fail_cnt_cam  <= 16'd0;
                 dbg_rel_doublefree_cnt_cam <= 16'd0;
                 dbg_free_min_cam        <= 4'd15;
                 dbg_free_max_cam        <= 4'd0;
+
+                alloc_fail_streak       <= 10'd0;
+                alloc_fail_hold         <= 1'b0;
             end
 
             // release-ek mindig rákerülnek a free poolra, ha owned
@@ -491,6 +529,7 @@ module hdmi_480p_core (
                 cur_line_y <= line_in_field_pre[CAM_DESC_Y_BITS-1:0];
 
                 wr_addr <= 10'd0;
+                alloc_fail_hold <= 1'b0;
 
                 cur_line_is_frame_start_cam <= frame_flag_next_line | frame_edge | pending_marker;
                 frame_flag_next_line        <= 1'b0;
@@ -501,17 +540,25 @@ module hdmi_480p_core (
 
                 if (limit_drop_pre) begin
                     drop_this_line <= 1'b1;
+                    alloc_fail_streak <= 10'd0;
                 end else if (alloc_ok) begin
                     wr_buf_idx     <= alloc_idx;
                     drop_this_line <= 1'b0;
+                    alloc_fail_streak <= 10'd0;
+                    cam_last_buf_idx <= alloc_idx;
 
                     // alloc: foglalás a calc-ben
                     free_rd_ptr_calc = (free_rd_ptr_calc + 1'b1) & {BUF_BITS{1'b1}};
                     free_cnt_calc    = free_cnt_calc - 1'b1;
                     cam_own_map_calc[alloc_idx] = 1'b1;
                 end else begin
-                    drop_this_line <= 1'b1;
+                    // alloc fallback: reuse last good buffer to keep descriptors flowing
+                    drop_this_line <= 1'b0;
+                    alloc_fail_hold <= 1'b1;
                     dbg_alloc_fail_cnt_cam <= dbg_alloc_fail_cnt_cam + 16'd1;
+                    wr_buf_idx <= cam_last_buf_idx;
+                    if (alloc_fail_streak != 10'h3FF)
+                        alloc_fail_streak <= alloc_fail_streak + 10'd1;
                 end
             end
 
@@ -523,7 +570,7 @@ module hdmi_480p_core (
             // PUSH/POP kezelés (pop -> push)
             // ==================================================
             pop_desc = desc_send_cam;
-            push_req = line_end && !drop_this_line;
+            push_req = line_end && (!drop_this_line || alloc_fail_hold);
             can_push = 1'b0;
 
             // 1) POP előbb (slot felszabadul full esetben)
@@ -536,10 +583,16 @@ module hdmi_480p_core (
             if (line_end) begin
                 if (push_req) begin
                     can_push = (cam_desc_count_calc < CAM_DESC_DEPTH);
+                    cam_desc_word = {pending_marker | cur_line_is_frame_start_cam, in_frame_id, cur_line_y, clean_buf_id(wr_buf_idx)};
+                    if (alloc_fail_hold)
+                        cam_desc_word = cam_last_desc_data;
                     if (can_push) begin
-                        cam_desc_fifo[cam_desc_wr_ptr_calc] <= {pending_marker | cur_line_is_frame_start_cam, in_frame_id, cur_line_y, clean_buf_id(wr_buf_idx)};
+                        cam_desc_fifo[cam_desc_wr_ptr_calc] <= cam_desc_word;
                         cam_desc_wr_ptr_calc                = (cam_desc_wr_ptr_calc + 1'b1) & CAM_DESC_MASK;
                         cam_desc_count_calc                 = cam_desc_count_calc + 1'b1;
+
+                        cam_last_desc_data <= cam_desc_word;
+                        cam_last_buf_idx   <= cam_desc_word[BUF_BITS-1:0];
 
                         cam_blocks_per_field <= (cam_blocks_per_field == 16'hFFFF) ? 16'hFFFF : cam_blocks_per_field + 16'd1;
 
@@ -548,7 +601,7 @@ module hdmi_480p_core (
                             pending_marker <= 1'b0;
                             dbg_cam_marker_inj_cnt <= dbg_cam_marker_inj_cnt + 16'd1;
                         end
-                    end else begin
+                    end else if (!alloc_fail_hold) begin
                         // nincs hely -> buffer vissza a poolba
                         if (cam_own_map_calc[clean_buf_id(wr_buf_idx)] && (free_cnt_calc < NUM_BUFS[BUF_BITS:0])) begin
                             free_fifo_calc[free_wr_ptr_calc] = clean_buf_id(wr_buf_idx);
@@ -565,6 +618,7 @@ module hdmi_480p_core (
                         dbg_cam_marker_drop_or_defer_cnt <= dbg_cam_marker_drop_or_defer_cnt + 16'd1;
                 end
                 drop_this_line <= 1'b0;
+                alloc_fail_hold <= 1'b0;
             end
 
             // ---- commit (csak NB az állapot reg-ekre) ----
@@ -592,7 +646,7 @@ module hdmi_480p_core (
     wire [7:0] line_q8,  line_q9,  line_q10, line_q11;
     wire [7:0] line_q12, line_q13, line_q14, line_q15;
 
-    wire wr_active = cam_line_valid && cam_y_valid && !drop_this_line && (wr_addr < H_ACTIVE);
+    wire wr_active = cam_line_valid && cam_y_valid && !drop_this_line && !alloc_fail_hold && (wr_addr < H_ACTIVE);
 
     wire use_buf0  = wr_active && (wr_buf_idx == 4'd0);
     wire use_buf1  = wr_active && (wr_buf_idx == 4'd1);
@@ -629,6 +683,19 @@ module hdmi_480p_core (
     line_buffer_dc #(.H_ACTIVE(H_ACTIVE)) u_buf13 (.wr_clk(cam_pclk),.wr_en(use_buf13),.wr_addr(wr_addr),.wr_data(cam_y),.rd_clk(pix_clk),.rd_addr(rd_addr),.rd_data(line_q13));
     line_buffer_dc #(.H_ACTIVE(H_ACTIVE)) u_buf14 (.wr_clk(cam_pclk),.wr_en(use_buf14),.wr_addr(wr_addr),.wr_data(cam_y),.rd_clk(pix_clk),.rd_addr(rd_addr),.rd_data(line_q14));
     line_buffer_dc #(.H_ACTIVE(H_ACTIVE)) u_buf15 (.wr_clk(cam_pclk),.wr_en(use_buf15),.wr_addr(wr_addr),.wr_data(cam_y),.rd_clk(pix_clk),.rd_addr(rd_addr),.rd_data(line_q15));
+
+    // Pool soft-reset pulse sync (CAM -> PIX)
+    always @(posedge pix_clk or negedge resetn) begin
+        if (!resetn) begin
+            pool_soft_reset_sync1_pix <= 1'b0;
+            pool_soft_reset_sync2_pix <= 1'b0;
+            pool_soft_reset_sync3_pix <= 1'b0;
+        end else begin
+            pool_soft_reset_sync1_pix <= pool_soft_reset_tog_cam;
+            pool_soft_reset_sync2_pix <= pool_soft_reset_sync1_pix;
+            pool_soft_reset_sync3_pix <= pool_soft_reset_sync2_pix;
+        end
+    end
 
     // ============================================================
     // PIX DOMAIN: descriptor FIFO + bob + watermark correction
@@ -1118,6 +1185,24 @@ module hdmi_480p_core (
             out_frame_id_expected_n  = out_frame_id_expected;
             need_frame_resync_n      = need_frame_resync;
             freeze_frame_n           = freeze_frame;
+
+            if (pool_soft_reset_pix) begin
+                // pool soft reset: drop outstanding descriptors/ownership and restart cleanly
+                desc_wr_ptr_n    = {DESC_BITS{1'b0}};
+                desc_rd_ptr_n    = {DESC_BITS{1'b0}};
+                desc_count_n     = 6'd0;
+                rel_q_wr_ptr_n   = {REL_Q_BITS{1'b0}};
+                rel_q_rd_ptr_n   = {REL_Q_BITS{1'b0}};
+                rel_q_count_n    = {REL_Q_BITS+1{1'b0}};
+                rel_accum_n      = 16'h0000;
+                rel_pend_n       = 1'b0;
+                rel_pend_data_n  = 16'h0000;
+                pix_own_map_n    = 16'h0000;
+                have_any_line_n  = 1'b0;
+                cur_buf_valid_n  = 1'b0;
+                do_drop_n        = 1'b0;
+                repeat_phase_n   = 1'b0;
+            end
 
             if (!vsync && vsync_d && vblank) begin
                 do_drop_n      = 1'b0;
