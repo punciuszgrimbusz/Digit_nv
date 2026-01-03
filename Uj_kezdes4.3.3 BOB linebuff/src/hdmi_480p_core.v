@@ -117,6 +117,7 @@ module hdmi_480p_core (
 
     // Lightweight diagnostics / resource saver
     localparam DIAG_LITE = 1;
+    localparam DBG_FAILSAFE_PATTERN = 1;
 `ifdef FORCE_WHITE
     localparam DEBUG_FORCE_WHITE = 1;
 `else
@@ -292,9 +293,12 @@ module hdmi_480p_core (
     reg [BUF_BITS-1:0] free_rd_ptr_calc, free_wr_ptr_calc;
     reg [BUF_BITS:0]   free_cnt_calc;
 
+    reg [BUF_BITS:0]   free_init_idx;
+    reg                free_init_active;
+    reg                pool_init_req;
+
     reg [15:0]         cam_own_map, cam_own_map_calc;
     reg                init_free_pool;
-    reg                lock_latched_cam_d;
 
     reg [BUF_BITS-1:0] wr_buf_idx;
     reg [9:0]          wr_addr;
@@ -370,8 +374,10 @@ module hdmi_480p_core (
             for (fi = 0; fi < NUM_BUFS; fi = fi + 1) begin
                 free_fifo[fi] <= fi[BUF_BITS-1:0];
             end
+            free_init_idx               <= {BUF_BITS+1{1'b0}};
+            free_init_active            <= 1'b1;
+            pool_init_req               <= 1'b1;
             cam_own_map                 <= 16'h0000;
-            lock_latched_cam_d          <= 1'b0;
 
             wr_buf_idx                  <= 4'd0;
             wr_addr                     <= 10'd0;
@@ -422,14 +428,14 @@ module hdmi_480p_core (
         end else begin
             cam_line_valid_d   <= cam_line_valid;
             cam_frame_toggle_d <= cam_frame_toggle;
-            lock_latched_cam_d <= lock_latched_cam;
-
-            init_free_pool = !lock_latched_cam_d && lock_latched_cam;
+            init_free_pool = pool_init_req;
             pool_soft_reset_pulse_cam <= 1'b0;
 
             if (alloc_fail_streak >= ALLOC_FAIL_WDOG_THRESH) begin
                 pool_soft_reset_tog_cam   <= ~pool_soft_reset_tog_cam;
                 pool_soft_reset_pulse_cam <= 1'b1;
+                init_free_pool            = 1'b1;
+                pool_init_req             <= 1'b1;
                 alloc_fail_streak        <= 10'd0;
             end
 
@@ -449,6 +455,7 @@ module hdmi_480p_core (
                 init_free_pool = 1'b1;
 
             if (init_free_pool) begin
+                pool_init_req <= 1'b0;
                 free_rd_ptr_calc = {BUF_BITS{1'b0}};
                 free_wr_ptr_calc = NUM_BUFS[BUF_BITS-1:0];
                 free_cnt_calc    = NUM_BUFS[BUF_BITS:0];
@@ -466,6 +473,8 @@ module hdmi_480p_core (
 
                 alloc_fail_streak       <= 10'd0;
                 alloc_fail_hold         <= 1'b0;
+                free_init_active        <= 1'b1;
+                free_init_idx           <= {BUF_BITS+1{1'b0}};
             end
 
             // release-ek mindig rákerülnek a free poolra, ha owned
@@ -492,6 +501,15 @@ module hdmi_480p_core (
             free_cnt_eff4 = DIAG_LITE ? 4'd0 : ((free_cnt_calc >= 5'd15) ? 4'd15 : free_cnt_calc[3:0]);
             alloc_ok      = (free_cnt_calc != 0);
             alloc_idx     = free_fifo_calc[free_rd_ptr_calc];
+
+            if (free_init_active) begin
+                free_fifo_calc[free_init_idx[BUF_BITS-1:0]] = free_init_idx[BUF_BITS-1:0];
+                if (free_init_idx == (NUM_BUFS[BUF_BITS:0]-1'b1)) begin
+                    free_init_active <= 1'b0;
+                end else begin
+                    free_init_idx <= free_init_idx + 1'b1;
+                end
+            end
 
             if (frame_edge) begin
                 frame_flag_next_line <= 1'b1;
@@ -2038,9 +2056,14 @@ module hdmi_480p_core (
     end
 
     wire        force_white = DEBUG_FORCE_WHITE && de;
-    wire [7:0] red   = force_white ? 8'hFF : y_reg;
-    wire [7:0] green = force_white ? 8'hFF : y_reg;
-    wire [7:0] blue  = force_white ? 8'hFF : y_reg;
+    wire        desc_fifo_empty = (desc_count == 0);
+    wire        failsafe_active = DBG_FAILSAFE_PATTERN && (desc_fifo_empty || !play_enable);
+    wire [7:0]  failsafe_gray = {h_cnt[7:5], v_cnt[6] ? 5'b11111 : 5'b00000};
+    wire [7:0]  normal_gray   = force_white ? 8'hFF : y_reg;
+    wire [7:0]  gray_out      = failsafe_active ? failsafe_gray : normal_gray;
+    wire [7:0] red   = gray_out;
+    wire [7:0] green = gray_out;
+    wire [7:0] blue  = gray_out;
 
     // ------------------------------------------------------------
     // TMDS encoding
