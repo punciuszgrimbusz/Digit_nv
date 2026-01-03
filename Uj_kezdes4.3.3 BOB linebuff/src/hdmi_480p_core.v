@@ -1157,8 +1157,7 @@ module hdmi_480p_core (
                     end
                     rel_accum_n     = rel_accum_n | startup_rel_mask;
                     desc_rd_ptr_n   = (desc_rd_ptr_n + marker_off_pix[DESC_BITS-1:0]) & DESC_MASK;
-                    // Zero-extend marker offset to match descriptor counter width
-                    desc_count_n    = desc_count_n - {1'b0, marker_off_pix};
+                    desc_count_n    = desc_count_n - marker_off_pix[5:0];
                 end
 
                 field_active_n         = 1'b1;
