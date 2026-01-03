@@ -284,7 +284,17 @@ module hdmi_480p_core (
     // ============================================================
     // CAMERA DOMAIN: buffer ownership + descriptor producer
     // ============================================================
-    reg [15:0] free_map;
+    reg [BUF_BITS-1:0] free_fifo [0:NUM_BUFS-1];
+    reg [BUF_BITS-1:0] free_fifo_calc [0:NUM_BUFS-1];
+    reg [BUF_BITS-1:0] free_rd_ptr, free_wr_ptr;
+    reg [BUF_BITS:0]   free_cnt;
+
+    reg [BUF_BITS-1:0] free_rd_ptr_calc, free_wr_ptr_calc;
+    reg [BUF_BITS:0]   free_cnt_calc;
+
+    reg [15:0]         cam_own_map, cam_own_map_calc;
+    reg                init_free_pool;
+    reg                lock_latched_cam_d;
 
     reg [BUF_BITS-1:0] wr_buf_idx;
     reg [9:0]          wr_addr;
@@ -324,43 +334,10 @@ module hdmi_480p_core (
     wire [5:0] block_in_field_pre= frame_edge ? 6'd0 : cam_block_idx;
     wire       limit_drop_pre    = (block_in_field_pre >= BLOCKS_PER_FIELD_TARGET_6);
 
-    wire [15:0] free_map_eff = free_map | (rel_new_cam ? rel_mask_cam : 16'h0000);
-    wire [4:0]  free_cnt_eff5 = DIAG_LITE ? 5'd0 : popcount16(free_map_eff);
-
-    // debug: saturáljuk 16->15-re, mert 4 bites port
-    wire [3:0] free_cnt_eff4 = DIAG_LITE ? 4'd0 : ((free_cnt_eff5 >= 5'd15) ? 4'd15 : free_cnt_eff5[3:0]);
-
-    wire [15:0] rel_doublefree_bits = (rel_new_cam ? (free_map & rel_mask_cam) : 16'h0000);
-
     reg [BUF_BITS-1:0] alloc_idx;
     reg                alloc_ok;
-    always @* begin
-        alloc_ok  = 1'b1;
-        alloc_idx = 4'd0;
-        if      (free_map_eff[0])  alloc_idx = 4'd0;
-        else if (free_map_eff[1])  alloc_idx = 4'd1;
-        else if (free_map_eff[2])  alloc_idx = 4'd2;
-        else if (free_map_eff[3])  alloc_idx = 4'd3;
-        else if (free_map_eff[4])  alloc_idx = 4'd4;
-        else if (free_map_eff[5])  alloc_idx = 4'd5;
-        else if (free_map_eff[6])  alloc_idx = 4'd6;
-        else if (free_map_eff[7])  alloc_idx = 4'd7;
-        else if (free_map_eff[8])  alloc_idx = 4'd8;
-        else if (free_map_eff[9])  alloc_idx = 4'd9;
-        else if (free_map_eff[10]) alloc_idx = 4'd10;
-        else if (free_map_eff[11]) alloc_idx = 4'd11;
-        else if (free_map_eff[12]) alloc_idx = 4'd12;
-        else if (free_map_eff[13]) alloc_idx = 4'd13;
-        else if (free_map_eff[14]) alloc_idx = 4'd14;
-        else if (free_map_eff[15]) alloc_idx = 4'd15;
-        else begin
-            alloc_ok  = 1'b0;
-            alloc_idx = 4'd0;
-        end
-    end
 
     // calc regs (csak blocking!)
-    reg [15:0]               free_map_calc;
     reg [CAM_DESC_PTR_BITS-1:0] cam_desc_wr_ptr_calc;
     reg [CAM_DESC_PTR_BITS-1:0] cam_desc_rd_ptr_calc;
     reg [5:0]                cam_desc_count_calc;
@@ -368,10 +345,19 @@ module hdmi_480p_core (
     reg pop_desc;
     reg push_req;
     reg can_push;
+    reg [3:0] free_cnt_eff4;
 
     always @(posedge cam_pclk or negedge cam_resetn) begin
         if (!cam_resetn) begin
-            free_map                    <= 16'hFFFF;
+            free_rd_ptr                 <= {BUF_BITS{1'b0}};
+            free_wr_ptr                 <= NUM_BUFS[BUF_BITS-1:0];
+            free_cnt                    <= NUM_BUFS[BUF_BITS:0];
+            for (fi = 0; fi < NUM_BUFS; fi = fi + 1) begin
+                free_fifo[fi] <= fi[BUF_BITS-1:0];
+            end
+            cam_own_map                 <= 16'h0000;
+            lock_latched_cam_d          <= 1'b0;
+
             wr_buf_idx                  <= 4'd0;
             wr_addr                     <= 10'd0;
             cam_line_valid_d            <= 1'b0;
@@ -414,23 +400,60 @@ module hdmi_480p_core (
         end else begin
             cam_line_valid_d   <= cam_line_valid;
             cam_frame_toggle_d <= cam_frame_toggle;
+            lock_latched_cam_d <= lock_latched_cam;
+
+            init_free_pool = !lock_latched_cam_d && lock_latched_cam;
 
             // ---- init calc ----
-            free_map_calc        = free_map;
+            for (fi = 0; fi < NUM_BUFS; fi = fi + 1) begin
+                free_fifo_calc[fi] = free_fifo[fi];
+            end
+            free_rd_ptr_calc     = free_rd_ptr;
+            free_wr_ptr_calc     = free_wr_ptr;
+            free_cnt_calc        = free_cnt;
+            cam_own_map_calc     = cam_own_map;
             cam_desc_wr_ptr_calc = cam_desc_wr_ptr;
             cam_desc_rd_ptr_calc = cam_desc_rd_ptr;
             cam_desc_count_calc  = cam_desc_count;
 
-            // release-ek mindig rákerülnek a free_map_calc-ra
-            if (rel_new_cam) begin
-                free_map_calc = free_map_calc | rel_mask_cam;
-                if (rel_rx_cnt_cam != 16'hFFFF)
-                    rel_rx_cnt_cam <= rel_rx_cnt_cam + 16'd1;
+            if (init_free_pool) begin
+                free_rd_ptr_calc = {BUF_BITS{1'b0}};
+                free_wr_ptr_calc = NUM_BUFS[BUF_BITS-1:0];
+                free_cnt_calc    = NUM_BUFS[BUF_BITS:0];
+                for (fi = 0; fi < NUM_BUFS; fi = fi + 1) begin
+                    free_fifo_calc[fi] = fi[BUF_BITS-1:0];
+                end
+                cam_own_map_calc        = 16'h0000;
+                dbg_alloc_fail_cnt_cam  <= 16'd0;
+                dbg_rel_doublefree_cnt_cam <= 16'd0;
+                dbg_free_min_cam        <= 4'd15;
+                dbg_free_max_cam        <= 4'd0;
             end
 
-            if (rel_new_cam && (rel_doublefree_bits != 16'h0000)) begin
-                dbg_rel_doublefree_cnt_cam <= dbg_rel_doublefree_cnt_cam + 16'd1;
+            // release-ek mindig rákerülnek a free poolra, ha owned
+            if (rel_new_cam) begin
+                if (rel_rx_cnt_cam != 16'hFFFF)
+                    rel_rx_cnt_cam <= rel_rx_cnt_cam + 16'd1;
+
+                for (fi = 0; fi < NUM_BUFS; fi = fi + 1) begin
+                    if (rel_mask_cam[fi]) begin
+                        if (cam_own_map_calc[fi]) begin
+                            if (free_cnt_calc < NUM_BUFS[BUF_BITS:0]) begin
+                                free_fifo_calc[free_wr_ptr_calc] = fi[BUF_BITS-1:0];
+                                free_wr_ptr_calc = (free_wr_ptr_calc + 1'b1) & {BUF_BITS{1'b1}};
+                                free_cnt_calc    = free_cnt_calc + 1'b1;
+                                cam_own_map_calc[fi] = 1'b0;
+                            end
+                        end else begin
+                            dbg_rel_doublefree_cnt_cam <= dbg_rel_doublefree_cnt_cam + 16'd1;
+                        end
+                    end
+                end
             end
+
+            free_cnt_eff4 = DIAG_LITE ? 4'd0 : ((free_cnt_calc >= 5'd15) ? 4'd15 : free_cnt_calc[3:0]);
+            alloc_ok      = (free_cnt_calc != 0);
+            alloc_idx     = free_fifo_calc[free_rd_ptr_calc];
 
             if (frame_edge) begin
                 frame_flag_next_line <= 1'b1;
@@ -483,7 +506,9 @@ module hdmi_480p_core (
                     drop_this_line <= 1'b0;
 
                     // alloc: foglalás a calc-ben
-                    free_map_calc[alloc_idx] = 1'b0;
+                    free_rd_ptr_calc = (free_rd_ptr_calc + 1'b1) & {BUF_BITS{1'b1}};
+                    free_cnt_calc    = free_cnt_calc - 1'b1;
+                    cam_own_map_calc[alloc_idx] = 1'b1;
                 end else begin
                     drop_this_line <= 1'b1;
                     dbg_alloc_fail_cnt_cam <= dbg_alloc_fail_cnt_cam + 16'd1;
@@ -525,7 +550,14 @@ module hdmi_480p_core (
                         end
                     end else begin
                         // nincs hely -> buffer vissza a poolba
-                        free_map_calc = free_map_calc | onehot16(clean_buf_id(wr_buf_idx));
+                        if (cam_own_map_calc[clean_buf_id(wr_buf_idx)] && (free_cnt_calc < NUM_BUFS[BUF_BITS:0])) begin
+                            free_fifo_calc[free_wr_ptr_calc] = clean_buf_id(wr_buf_idx);
+                            free_wr_ptr_calc = (free_wr_ptr_calc + 1'b1) & {BUF_BITS{1'b1}};
+                            free_cnt_calc    = free_cnt_calc + 1'b1;
+                            cam_own_map_calc[clean_buf_id(wr_buf_idx)] = 1'b0;
+                        end else begin
+                            dbg_rel_doublefree_cnt_cam <= dbg_rel_doublefree_cnt_cam + 16'd1;
+                        end
                     end
                 end
                 if (pending_marker && (!push_req || !can_push)) begin
@@ -536,7 +568,13 @@ module hdmi_480p_core (
             end
 
             // ---- commit (csak NB az állapot reg-ekre) ----
-            free_map        <= free_map_calc;
+            for (fi = 0; fi < NUM_BUFS; fi = fi + 1)
+                free_fifo[fi] <= free_fifo_calc[fi];
+            free_rd_ptr     <= free_rd_ptr_calc;
+            free_wr_ptr     <= free_wr_ptr_calc;
+            free_cnt        <= free_cnt_calc;
+            cam_own_map     <= cam_own_map_calc;
+
             cam_desc_wr_ptr <= cam_desc_wr_ptr_calc;
             cam_desc_rd_ptr <= cam_desc_rd_ptr_calc;
             cam_desc_count  <= cam_desc_count_calc;
@@ -747,6 +785,7 @@ module hdmi_480p_core (
     integer mi;
     integer ri;
     integer si;
+    integer fi;
     reg [DESC_BITS-1:0] midx;
     reg [DESC_BITS-1:0] midx_startup;
     reg force_repeat_line;
@@ -1115,8 +1154,13 @@ module hdmi_480p_core (
                     overflow_cnt_n = overflow_cnt_n + 10'd1;
                     pix_fault_sticky_n[ST_DESC_OVERFLOW] = 1'b1;
 
-                    rel_accum_n   = rel_accum_n | onehot16(rx_idx_clean);
-                    pix_own_map_n = pix_own_map_n & ~onehot16(rx_idx_clean);
+                    if (pix_own_map_n[rx_idx_clean]) begin
+                        rel_accum_n   = rel_accum_n | onehot16(rx_idx_clean);
+                        pix_own_map_n = pix_own_map_n & ~onehot16(rx_idx_clean);
+                    end else begin
+                        pix_fault_sticky_n[ST_REL_NOT_OWNED] = 1'b1;
+                        pix_rel_not_owned_cnt_n              = pix_rel_not_owned_cnt_n + 16'd1;
+                    end
 
                     pix_overflow_rel_lo8_n = pix_overflow_rel_lo8_n + 8'd1;
                 end
@@ -1255,8 +1299,8 @@ module hdmi_480p_core (
                                     pix_rel_not_owned_cnt_n = pix_rel_not_owned_cnt_n + 16'd1;
                             end else begin
                                 pix_own_map_n = pix_own_map_n & ~onehot16(startup_rel_buf);
+                                startup_rel_mask = startup_rel_mask | onehot16(startup_rel_buf);
                             end
-                            startup_rel_mask = startup_rel_mask | onehot16(startup_rel_buf);
                         end
                     end
                     rel_accum_n     = rel_accum_n | startup_rel_mask;
@@ -1328,13 +1372,13 @@ module hdmi_480p_core (
                                 need_frame_resync_n = 1'b1;
                             end else begin
                                 if (cur_buf_valid_n) begin
-                                    rel_accum_n = rel_accum_n | onehot16(cur_buf_idx_r_n);
-
-                                    if (!pix_own_map_n[cur_buf_idx_r_n]) begin
+                                    if (pix_own_map_n[cur_buf_idx_r_n]) begin
+                                        rel_accum_n = rel_accum_n | onehot16(cur_buf_idx_r_n);
+                                        pix_own_map_n = pix_own_map_n & ~onehot16(cur_buf_idx_r_n);
+                                    end else begin
                                         pix_fault_sticky_n[ST_REL_NOT_OWNED] = 1'b1;
                                         pix_rel_not_owned_cnt_n              = pix_rel_not_owned_cnt_n + 16'd1;
                                     end
-                                    pix_own_map_n = pix_own_map_n & ~onehot16(cur_buf_idx_r_n);
                                 end
 
                                 cur_buf_idx_r_n = clean_buf_id(desc_fifo[desc_rd_ptr_n][DESC_BUF_MSB:DESC_BUF_LSB]);
@@ -1375,13 +1419,13 @@ module hdmi_480p_core (
                             if (cur_buf_valid_n && !frame_repeat_active_n && !field_exhausted_fill_n &&
                                ((uf_streak_n >= 4'd2) || (popcount16(pix_own_map_n) >= 5'd14))) begin
 
-                                rel_accum_n = rel_accum_n | onehot16(cur_buf_idx_r_n);
-
-                                if (!pix_own_map_n[cur_buf_idx_r_n]) begin
+                                if (pix_own_map_n[cur_buf_idx_r_n]) begin
+                                    rel_accum_n   = rel_accum_n | onehot16(cur_buf_idx_r_n);
+                                    pix_own_map_n = pix_own_map_n & ~onehot16(cur_buf_idx_r_n);
+                                end else begin
                                     pix_fault_sticky_n[ST_REL_NOT_OWNED] = 1'b1;
                                     pix_rel_not_owned_cnt_n              = pix_rel_not_owned_cnt_n + 16'd1;
                                 end
-                                pix_own_map_n   = pix_own_map_n & ~onehot16(cur_buf_idx_r_n);
                                 cur_buf_valid_n = 1'b0;
                             end
                         end
