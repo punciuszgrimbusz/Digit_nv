@@ -699,6 +699,10 @@ module hdmi_480p_core (
     reg        locked, locked_n;
     reg [6:0]  startup_watchdog, startup_watchdog_n;
 
+    reg        play_enable, play_enable_n;
+    reg        play_enable_pending, play_enable_pending_n;
+    reg [6:0]  play_enable_watchdog, play_enable_watchdog_n;
+
     reg        soft_drop_pending, soft_drop_pending_n;
     reg        do_pop_desc;
 
@@ -832,6 +836,10 @@ module hdmi_480p_core (
             locked               <= 1'b0;
             startup_watchdog     <= 7'd0;
 
+            play_enable             <= 1'b0;
+            play_enable_pending     <= 1'b0;
+            play_enable_watchdog    <= 7'd0;
+
             field_active      <= 1'b0;
             frame_repeat_active <= 1'b0;
             field_exhausted_fill <= 1'b0;
@@ -958,6 +966,9 @@ module hdmi_480p_core (
             lock_latched_n         = lock_latched;
             locked_n               = locked;
             startup_watchdog_n     = startup_watchdog;
+            play_enable_n          = play_enable;
+            play_enable_pending_n  = play_enable_pending;
+            play_enable_watchdog_n = play_enable_watchdog;
             align_budget_n   = align_budget;
             align_active_n   = align_active;
 
@@ -1103,9 +1114,31 @@ module hdmi_480p_core (
                 end else begin
                     startup_watchdog_n = 7'd0;
                 end
+
+                if (marker_found_pix && (marker_off_pix == 5'd0))
+                    play_enable_pending_n = 1'b1;
             end
 
             if (frame_start) begin
+                if (play_enable_pending_n) begin
+                    play_enable_n         = 1'b1;
+                    play_enable_pending_n = 1'b0;
+                    frame_repeat_active_n = 1'b0;
+                    field_exhausted_fill_n= 1'b0;
+                    repeat_phase_n        = 1'b0;
+                    freeze_frame_n        = 1'b0;
+                end
+
+                if (!play_enable_n) begin
+                    play_enable_watchdog_n = (play_enable_watchdog_n == 7'h7F) ? play_enable_watchdog_n : play_enable_watchdog_n + 7'd1;
+                    if (play_enable_watchdog_n >= 7'd120) begin
+                        play_enable_n         = 1'b1;
+                        play_enable_pending_n = 1'b0;
+                    end
+                end else begin
+                    play_enable_watchdog_n = 7'd0;
+                end
+
                 seek_armed_n  = 1'b0;
                 seek_active_n = 1'b0;
                 seek_rem_n    = 5'd0;
@@ -1461,7 +1494,7 @@ module hdmi_480p_core (
                     dbg_align_pop_total_dbg,     // [359:344]
                     dbg_align_hit_cnt_dbg,       // [343:328]
                     dbg_marker_miss_cnt_dbg,     // [327:312]
-                    dbg_marker_off_snapshot_dbg, // [311:304]
+                    dbg_marker_off_snapshot_dbg[7:0], // [311:304]
 
                     dbg_soft_drop_lines_dbg,     // [303:288]
                     dbg_soft_dup_lines_dbg,      // [287:272]
@@ -1558,6 +1591,9 @@ module hdmi_480p_core (
             lock_latched         <= lock_latched_n;
             locked               <= locked_n;
             startup_watchdog     <= startup_watchdog_n;
+            play_enable          <= play_enable_n;
+            play_enable_pending  <= play_enable_pending_n;
+            play_enable_watchdog <= play_enable_watchdog_n;
 
             out_frame_id_expected <= out_frame_id_expected_n;
             need_frame_resync     <= need_frame_resync_n;
@@ -1780,7 +1816,7 @@ module hdmi_480p_core (
         if (!resetn) begin
             y_reg <= 8'd0;
         end else begin
-            if (de) begin
+            if (de && play_enable) begin
                 if (have_any_line && cur_buf_valid)
                     y_reg <= cam_y_sample;
                 else
