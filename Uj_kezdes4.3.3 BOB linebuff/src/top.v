@@ -162,6 +162,7 @@ module top(
     wire [15:0] blocks_left_snapshot_cam;
     wire [15:0] marker_at_head_cam;
     wire [15:0] field_start_ok_cnt_cam;
+    wire [15:0] de_line_cnt_cam;
     wire        lock_latched_cam;
 
     wire [5:0] dbg_cam_descq_cnt_cam;
@@ -224,6 +225,7 @@ module top(
         .blocks_left_snapshot_cam  (blocks_left_snapshot_cam),
         .marker_at_head_cam        (marker_at_head_cam),
         .field_start_ok_cnt_cam    (field_start_ok_cnt_cam),
+        .de_line_cnt_cam           (de_line_cnt_cam),
         .lock_latched_cam          (lock_latched_cam),
 
         .dbg_pop_lines_cnt_cam       (dbg_pop_lines_cnt_cam),
@@ -350,7 +352,7 @@ module top(
 
     i2c_diag_pager #(
         .CLK_HZ  (27000000),
-        .PERIODS (3),
+        .PERIODS (4),
         .PAGES   (70)  // 0..69
     ) u_pager (
         .clk    (cam1_pclk),
@@ -385,6 +387,7 @@ module top(
         .dbg_cam_fieldtog_cnt   (dbg_cam_fieldtog_cnt_cam),
         .dbg_cam_marker_inj_cnt (dbg_cam_marker_inj_cnt_cam),
         .dbg_cam_desc_sent_cnt  (dbg_cam_desc_sent_cnt_cam),
+        .de_line_cnt            (de_line_cnt_cam),
         .dbg_cam_marker_drop_or_defer_cnt (dbg_cam_marker_drop_or_defer_cnt_cam),
 
         .dbg_fault_sticky        (dbg_fault_sticky_cam),

@@ -96,6 +96,7 @@ module hdmi_480p_core (
     output reg  [15:0] blocks_left_snapshot_cam    = 16'd0,
     output reg  [15:0] marker_at_head_cam          = 16'd0,
     output reg  [15:0] field_start_ok_cnt_cam      = 16'd0,
+    output reg  [15:0] de_line_cnt_cam             = 16'd0,
 
     // Lock status (PIX -> CAM)
     output reg         lock_latched_cam = 1'b0,
@@ -112,6 +113,7 @@ module hdmi_480p_core (
 
     // Lightweight diagnostics / resource saver
     localparam DIAG_LITE = 1;
+    localparam DEBUG_FORCE_WHITE = 1;
 
     // ------------------------------------------------------------
     // 720x480p timing @ ~27 MHz
@@ -1515,9 +1517,9 @@ module hdmi_480p_core (
                     pix_rel_not_owned_cnt_n,     // [87:72]
                     pix_overflow_rel_lo8_n,      // [71:64]
 
-                    8'd0,                        // [63:56]
+                    de_line_cnt_pix[15:8],       // [63:56]
                     marker_off_r_n[4],           // [55]
-                    8'd0,                        // [54:47]
+                    de_line_cnt_pix[7:0],        // [54:47]
                     marker_found_r_n,            // [46]
                     marker_off_r_n[3:0],         // [45:42] low4
                     desc_max_n[4:0],             // [41:37] low5
@@ -1716,6 +1718,7 @@ module hdmi_480p_core (
             blocks_left_snapshot_cam    <= 16'd0;
             marker_at_head_cam          <= 16'd0;
             field_start_ok_cnt_cam      <= 16'd0;
+            de_line_cnt_cam             <= 16'd0;
 
         end else begin
             lock_latched_sync1 <= lock_latched;
@@ -1732,6 +1735,7 @@ module hdmi_480p_core (
                 blocks_left_snapshot_cam  <= dbg_bus_sync2[551:536];
                 marker_at_head_cam        <= dbg_bus_sync2[535:520];
                 field_start_ok_cnt_cam    <= dbg_bus_sync2[519:504];
+                de_line_cnt_cam           <= {dbg_bus_sync2[63:56], dbg_bus_sync2[54:47]};
 
                 rel_sent_cnt_pix <= dbg_bus_sync2[503:488];
                 dbg_pop_lines_cnt_cam        <= dbg_bus_sync2[487:472];
@@ -1812,10 +1816,39 @@ module hdmi_480p_core (
     // Pixel generator (grayscale)
     // ------------------------------------------------------------
     reg [7:0] y_reg;
+    reg       de_seen_line;
+    reg [15:0] de_line_cnt_work;
+    reg [15:0] de_line_cnt_pix;
+    reg       vsync_d;
+
     always @(posedge pix_clk or negedge resetn) begin
         if (!resetn) begin
             y_reg <= 8'd0;
+            de_seen_line <= 1'b0;
+            de_line_cnt_work <= 16'd0;
+            de_line_cnt_pix <= 16'd0;
+            vsync_d <= 1'b1;
         end else begin
+            vsync_d <= vsync;
+
+            if (line_start_any) begin
+                if (de_seen_line && (de_line_cnt_work != 16'hFFFF))
+                    de_line_cnt_work <= de_line_cnt_work + 16'd1;
+                de_seen_line <= 1'b0;
+            end
+
+            if (vsync_d && !vsync) begin
+                de_line_cnt_pix <= de_line_cnt_work;
+                de_line_cnt_work <= 16'd0;
+            end
+
+            if (frame_start) begin
+                de_line_cnt_work <= 16'd0;
+                de_seen_line <= 1'b0;
+            end else if (de) begin
+                de_seen_line <= 1'b1;
+            end
+
             if (de && play_enable) begin
                 if (have_any_line && cur_buf_valid)
                     y_reg <= cam_y_sample;
@@ -1827,9 +1860,10 @@ module hdmi_480p_core (
         end
     end
 
-    wire [7:0] red   = y_reg;
-    wire [7:0] green = y_reg;
-    wire [7:0] blue  = y_reg;
+    wire        force_white = DEBUG_FORCE_WHITE && de;
+    wire [7:0] red   = force_white ? 8'hFF : y_reg;
+    wire [7:0] green = force_white ? 8'hFF : y_reg;
+    wire [7:0] blue  = force_white ? 8'hFF : y_reg;
 
     // ------------------------------------------------------------
     // TMDS encoding
