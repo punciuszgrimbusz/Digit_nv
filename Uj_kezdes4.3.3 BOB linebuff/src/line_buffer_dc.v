@@ -16,10 +16,6 @@ module line_buffer_dc #(
     output reg  [7:0]  rd_data
 );
     // 720 x 8-bit line buffer
-    // Hint the synthesizer to infer true dual-port block RAM instead of
-    // distributing the storage across LUTs/FFs (which easily blows the
-    // available logic budget).
-    (* ram_style = "block", syn_ramstyle = "block_ram" *)
     reg [7:0] mem [0:H_ACTIVE-1];
 
     // write side
