@@ -75,7 +75,7 @@
 */
 module i2c_diag_pager #(
     parameter integer CLK_HZ  = 27000000,
-    parameter integer PERIODS = 3,
+    parameter integer PERIODS = 4,
     parameter integer PAGES   = 70   // 0..69
 )(
     input  wire       clk,
@@ -110,6 +110,7 @@ module i2c_diag_pager #(
     input  wire [15:0] dbg_cam_fieldtog_cnt,
     input  wire [15:0] dbg_cam_marker_inj_cnt,
     input  wire [15:0] dbg_cam_desc_sent_cnt,
+    input  wire [15:0] de_line_cnt,
 
     // pages 16..25
     input  wire [15:0] dbg_fault_sticky,       // page16
@@ -271,7 +272,7 @@ module i2c_diag_pager #(
                     8'd31: value_mux = dup_accum;
                     8'd32: value_mux = resync_accum;
 
-                    8'd33: value_mux = {10'd0, dbg_cam_descq_cnt_cam};
+                    8'd33: value_mux = de_line_cnt;
                     8'd34: value_mux = dbg_last_drop_v;
                     8'd35: value_mux = dbg_last_dup_v;
                     8'd36: value_mux = in_sof_cnt16;
